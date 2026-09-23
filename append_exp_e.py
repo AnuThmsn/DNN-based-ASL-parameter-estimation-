@@ -38,3 +38,4 @@ master = pd.read_csv("master_results.csv").to_dict('records')
 master.append({'Method': 'DNN Experiment E (Residual)', 'CBF RMSE': c_rmse_10, 'ATT RMSE': a_rmse_10, 'Source': 'Our run'})
 pd.DataFrame(master).to_csv("master_results.csv", index=False)
 print(f"Exp E added. CBF: {c_rmse_10:.4f}, ATT: {a_rmse_10:.4f}")
+

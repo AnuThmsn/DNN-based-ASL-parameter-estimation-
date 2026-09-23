@@ -24,19 +24,19 @@ def generate_snr_arr(N_total, rng, n_noise_levels=51):
 snr_test = generate_snr_arr(100_000, np.random.default_rng(7))
 snr_mask_10 = (snr_test >= 9) & (snr_test <= 11)
 
-xtr, xte = X_tr[:200000], X_test
+xtr, xte = X_tr, X_test
 xtr_n, m, s = standardize(xtr)
 xte_n, _, _ = standardize(xte, m, s)
 xtr_t = torch.tensor(xtr_n, device=device, dtype=torch.float32)
 xte_t = torch.tensor(xte_n, device=device, dtype=torch.float32)
-ytr_t = Y_tr_both_t[:200000]
+ytr_t = Y_tr_both_t
 yval_t = Y_val_both_t
 xtr_raw_t = torch.tensor(xtr, device=device, dtype=torch.float32)
 xte_raw_t = torch.tensor(xte, device=device, dtype=torch.float32)
 
 def calc_rmse(yt, yp): return np.sqrt(np.mean((yt - yp)**2))
 
-def train_eval_res(net, exp_name, epochs=15, bs=4096):
+def train_eval_res(net, exp_name, epochs=40, bs=4096):
     opt = torch.optim.Adam(net.parameters(), lr=1e-3)
     crit = nn.L1Loss()
     print(f"Training {exp_name}...", flush=True)
@@ -90,3 +90,4 @@ except Exception as e:
     print("Could not update master:", e)
 
 print("Exp E complete.")
+
