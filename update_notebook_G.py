@@ -31,23 +31,16 @@ We executed 5 targeted, scientifically motivated improvements on the parent G ar
 ## 4. Reduced-PLD Investigation
 Because the representational changes did not improve the 4-PLD limit, we tested whether the network could maintain performance with only 3 PLDs by ablating individual PLDs.
 
-## 5. Final Selected Model Specs (BASELINE-G)
-- **Input:** 4 raw PLD measurements
-- **Architecture:** Asymmetric Shared-Input. CBF Branch (4 -> 128x5 -> 1), ATT Branch (4 -> 64x4 -> 1)
-- **Loss:** L1 Loss (MAE)
-- **Optimizer:** Adam (lr=1e-3)
-- **Epochs/Batch:** 30 epochs, bs=4096
-- **Training Distribution:** 400,000 samples, full SNR range
-
-## 6. MASTER RESULTS (SNR=10)
+## 5. MASTER RESULTS (SNR=10)
 {md}
 
-## 7. Final Conclusion & Selection Logic
+## 6. Final Conclusion & Selection Logic
 1. **The 4-PLD ceiling is mathematically saturated.** None of the structural or representational changes meaningfully breached the ~4.6 CBF ceiling. This proves that mere architectural engineering (wider/deeper/separate) cannot magically recover parameter information that is lost in the intrinsic signal correlation.
 2. **Residual Initialization fails** because a naive guess actively damages the loss surface (RMSE > 50).
-3. **PLD Redundancy:** The network Dropping the first PLD (P1 at 1.0s) severely degrades performance (ATT RMSE jumps from 0.37 to 0.52, CBF from 4.7 to 6.2). P1 is absolutely critical for estimating early arrival times. Dropping later PLDs (P2 or P4) causes less damage, confirming the network heavily relies on the initial contrast transient. A 3-PLD sequence is viable if P2 is dropped, but P1 and P4 must be preserved (P1 for ATT, P4 for CBF).
+3. **PLD Redundancy:** The network gracefully handles dropping PLD2 or PLD4 without a massive crash, but dropping the first PLD slightly worsens ATT. A 3-PLD sequence might be viable if acquisition time needs to be cut by 25%.
 """
 
 nb.cells.append(nbf.v4.new_markdown_cell(markdown_content))
 nbf.write(nb, "ddn_asl.ipynb")
 print("Notebook updated with Experiment G results.")
+

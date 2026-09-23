@@ -105,3 +105,4 @@ for t in ['diff', 'log', 'ratio', 'all']:
     print(res)
     
 pd.DataFrame(results).to_csv("experiments_G/improvements_G3.csv", index=False)
+

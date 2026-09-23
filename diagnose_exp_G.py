@@ -63,3 +63,4 @@ for s in snr_levels:
 pd.DataFrame(snr_results).to_csv("experiments_G/diagnostics/snr_curves.csv", index=False)
 
 print("Diagnostics saved to experiments_G/diagnostics/")
+

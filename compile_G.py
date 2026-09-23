@@ -26,3 +26,4 @@ if dfs:
         
     master.to_csv("experiments_G/master_results_G.csv", index=False)
     print("Master table updated.")
+

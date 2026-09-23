@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 from data_gen import *
 import os
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 def standardize(X, m=None, s=None):
     if m is None:
         m = X.mean(axis=0, keepdims=True)

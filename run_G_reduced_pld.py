@@ -92,3 +92,4 @@ results.append(test_plds([0,2,3], "3-PLD (Drop P2)"))
 results.append(test_plds([0,1,2], "3-PLD (Drop P4)"))
 
 pd.DataFrame(results).to_csv("experiments_G/reduced_pld.csv", index=False)
+
