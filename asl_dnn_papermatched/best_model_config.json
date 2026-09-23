@@ -1,0 +1,14 @@
+{
+  "architecture": "shared_256_128_huber",
+  "input_features": "raw_ratios_logs_diffs",
+  "loss": "weighted_huber + physics_mse",
+  "physics_lambda": 0.01,
+  "optimizer": "AdamW",
+  "learning_rate": 0.0001,
+  "weight_decay": 1e-05,
+  "seed": 42,
+  "CBF_test_RMSE": 4.6023460847741715,
+  "ATT_test_RMSE": 0.36237992117318535,
+  "CBF_MAE": 3.4083765604531138,
+  "ATT_MAE": 0.23981073119461535
+}
