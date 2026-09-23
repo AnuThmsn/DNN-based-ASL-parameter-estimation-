@@ -80,3 +80,4 @@ def fit_bayesian_batch(X_batch, snr_batch, sig_ref_sc):
         preds[i, 1] = att_pred
         
     return preds, time.time() - start_time
+

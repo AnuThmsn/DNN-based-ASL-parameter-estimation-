@@ -1,0 +1,27 @@
+# Established Fixed Reference Baselines
+# Do not overwrite these values with newly implemented code.
+# These represent the target performance thresholds.
+
+SNR_10:
+  Bayesian:
+    CBF_RMSE: 5.030
+    CBF_MAE: 3.968
+    ATT_RMSE: 0.0826
+    ATT_MAE: 0.0683
+  NLLS:
+    CBF_RMSE: 2.982
+    CBF_MAE: 2.048
+    ATT_RMSE: 0.5062
+    ATT_MAE: 0.3411
+
+SNR_15:
+  Bayesian:
+    CBF_RMSE: 3.759
+    CBF_MAE: 2.849
+    ATT_RMSE: 0.0584
+    ATT_MAE: 0.0472
+  NLLS:
+    CBF_RMSE: 2.062
+    CBF_MAE: 1.414
+    ATT_RMSE: 0.4951
+    ATT_MAE: 0.3259
