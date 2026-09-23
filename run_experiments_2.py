@@ -91,6 +91,8 @@ def get_best_arch(dim):
 
 results = pd.read_csv("val_results.csv")
 results = results[results['ID'] <= 7].to_dict('records')
+results = pd.read_csv("val_results.csv").to_dict('records')
+done_ids = [r['ID'] for r in results]
 
 def evaluate(net, x_val, output_constraint=False):
     net.eval()
@@ -157,6 +159,9 @@ def train_model(net, x_tr, y_tr, x_val, y_val, criterion, lr=1e-3, epochs=60, ba
     return net
 
 def run_exp(id_num, arch_name, net, loss_name, criterion, opt='adam', lr=1e-3, wd=0, inp_name="S1-S4", phys_lambda=0, output_constraint=False, x_tr=X_tr_t, x_val=X_val_t):
+    if id_num in done_ids:
+        print(f"Skipping Exp {id_num}, already done.", flush=True)
+        return
     print(f"Running Exp {id_num}...", flush=True)
     y_tr = Y_tr_both_t
     y_val = Y_val_both_t
@@ -269,14 +274,19 @@ net, arch = get_best_arch(best_dim)
 run_exp(12, arch, net, "MAE + 0.01 Physics", PhysicsLoss(0.01), inp_name=best_inp_name, phys_lambda=0.01, x_tr=X_tr_best, x_val=X_val_best)
 net, arch = get_best_arch(best_dim)
 run_exp(13, arch, net, "MAE + 0.1 Physics", PhysicsLoss(0.1), inp_name=best_inp_name, phys_lambda=0.1, x_tr=X_tr_best, x_val=X_val_best)
+# net, arch = get_best_arch(best_dim)
+# run_exp(12, arch, net, "MAE + 0.01 Physics", PhysicsLoss(0.01), inp_name=best_inp_name, phys_lambda=0.01, x_tr=X_tr_best, x_val=X_val_best)
+# net, arch = get_best_arch(best_dim)
+# run_exp(13, arch, net, "MAE + 0.1 Physics", PhysicsLoss(0.1), inp_name=best_inp_name, phys_lambda=0.1, x_tr=X_tr_best, x_val=X_val_best)
 
-df = pd.DataFrame(results)
-best_p_idx = df.loc[df['ID'].isin([7, 8, 9, 10, 11, 12, 13]), 'CBF Val RMSE'].idxmin()
-best_phys_row = df.loc[best_p_idx]
-best_lambda = best_phys_row['Physics lambda']
-best_loss_name = best_phys_row['Loss']
+def main():
+    df = pd.DataFrame(results)
+    best_p_idx = df.loc[df['ID'].isin([7, 8, 9, 10, 11, 12, 13]), 'CBF Val RMSE'].idxmin()
+    best_phys_row = df.loc[best_p_idx]
+    best_lambda = best_phys_row['Physics lambda']
+    best_loss_name = best_phys_row['Loss']
 
-print("Phase 7...", flush=True)
+    print("Phase 7...", flush=True)
 class ConstrainedNet(nn.Module):
     def __init__(self, base_net):
         super().__init__()

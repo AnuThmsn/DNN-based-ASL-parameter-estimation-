@@ -8,8 +8,8 @@ with open("final_metrics.txt", "r") as f:
 
 best_row = df_val.loc[df_val['CBF Val RMSE'].idxmin()]
 
-cbf_res = pd.read_csv("cbf_residuals.csv").to_markdown(index=False)
-att_res = pd.read_csv("att_residuals.csv").to_markdown(index=False)
+cbf_res = pd.read_csv("cbf_residuals.csv").to_string(index=False)
+att_res = pd.read_csv("att_residuals.csv").to_string(index=False)
 
 nb = nbf.read("ddn_asl.ipynb", as_version=4)
 
@@ -37,7 +37,7 @@ markdown_content = f"""
 The primary bottleneck for CBF was the network architecture lacking residual connections and the loss function.
 
 **Experiments Table (Validation Results):**
-{df_val.to_markdown(index=False)}
+{df_val.to_string(index=False)}
 
 **Best Validation Configuration:**
 - Architecture: {best_row['Architecture']}
@@ -111,7 +111,7 @@ exec(code_content)
 sys.stdout = old_stdout
 output_str = mystdout.getvalue()
 
-code_cell.outputs.append(nbf.v4.new_output('stream', 'stdout', text=output_str))
+code_cell.outputs.append(nbf.v4.new_output(output_type='stream', name='stdout', text=output_str))
 nb.cells.append(code_cell)
 
 nbf.write(nb, "ddn_asl.ipynb")
