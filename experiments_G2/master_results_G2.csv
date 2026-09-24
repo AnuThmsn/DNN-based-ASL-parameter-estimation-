@@ -1,0 +1,9 @@
+Model,Input,CBF_RMSE,ATT_RMSE,Decision
+G_BASELINE,raw [S1..S4],4.674,0.373,Parent
+G1_LOG,raw + log(S),4.625,0.372,WINNER
+G2_DIFF,raw + ΔS,4.637,0.372,Reject (weaker than G1)
+G3_RATIO,raw + S_i/S_{i-1},4.664,0.371,Reject
+G4_COMBINED,raw+log+Δ+ratio,4.639,0.371,Reject (no gain over G1)
+G5_PLD_AWARE_enc32,"(PLD,S) pairs",4.66,0.371,Reject
+G5_PLD_AWARE_enc64,"(PLD,S) pairs",4.65,0.37,"Reject (longer, marginal ATT)"
+G1_LOG (3-seed mean),raw + log(S),4.638,0.372,Verified winner
