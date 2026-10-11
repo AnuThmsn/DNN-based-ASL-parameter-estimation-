@@ -1,0 +1,49 @@
+{
+  "experiment_name": "experiments_unet_4pld",
+  "description": "Four-PLD Spatial U-Net for ASL-MRI CBF and ATT estimation",
+  "physics": {
+    "PLDs": [1.525, 2.025, 2.525, 3.025],
+    "tau": 1.8,
+    "T1t": 1.2,
+    "T1a": 1.66,
+    "alpha": 0.85,
+    "beta": 0.75,
+    "lmbda": 0.9,
+    "SCALE": 100000.0,
+    "SIG_REF_SC": 334.2039,
+    "SD_MAX": 66.84078,
+    "CBF_MIN": 0.0,
+    "CBF_MAX": 100.0,
+    "ATT_MIN": 0.5,
+    "ATT_MAX": 3.0
+  },
+  "data": {
+    "img_size": 64,
+    "n_train_phantoms": 600,
+    "n_val_phantoms": 100,
+    "n_test_phantoms": 100,
+    "train_seed": 42,
+    "val_seed": 99,
+    "test_seed": 7,
+    "test_snr_targets": [10.0, 15.0]
+  },
+  "model": {
+    "in_channels": 4,
+    "out_channels": 2,
+    "features": [32, 64, 128, 256],
+    "dropout": 0.0
+  },
+  "training": {
+    "batch_size": 32,
+    "learning_rate": 0.001,
+    "weight_decay": 1e-4,
+    "max_epochs": 80,
+    "patience": 12,
+    "lr_scheduler": "ReduceLROnPlateau",
+    "lr_factor": 0.5,
+    "lr_patience": 5,
+    "min_lr": 1e-6,
+    "seeds": [42, 43, 44]
+  }
+}
+
