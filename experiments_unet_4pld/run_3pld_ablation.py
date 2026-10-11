@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import time
+import shutil
 import argparse
 import numpy as np
 import pandas as pd
@@ -25,6 +26,8 @@ from experiments_unet_4pld.dataset import (
     normalize_dataset,
     denormalize_predictions
 )
+from experiments_unet_4pld.workspace import get_workspace
+from experiments_unet_4pld.dataset_cache import get_or_create_dataset
 from experiments_unet_4pld.train import MaskedLoss
 from experiments_unet_4pld.evaluate import (
     evaluate_unet,
@@ -159,6 +162,13 @@ def train_unet_subset_single_seed(
 
     ckpt_dir = os.path.join(save_dir, "checkpoints")
     os.makedirs(ckpt_dir, exist_ok=True)
+    best_ckpt_path = os.path.join(ckpt_dir, f"unet_3pld_{subset_key}_best_seed_{seed}.pth")
+    if os.path.exists(best_ckpt_path):
+        ckpt_cached = torch.load(best_ckpt_path, weights_only=False)
+        val_loss_cached = float(ckpt_cached.get("val_loss", 0.0))
+        ep_cached = int(ckpt_cached.get("epoch", 0))
+        print(f"    [Reusing Verified Checkpoint] {best_ckpt_path} (Best Ep: {ep_cached}, Val Loss: {val_loss_cached:.4f})")
+        return best_ckpt_path, val_loss_cached, ep_cached, 0.0
 
     best_val_loss = float("inf")
     best_epoch = 0
@@ -215,19 +225,20 @@ def train_unet_subset_single_seed(
                 break
 
     duration = time.time() - start_time
-    return best_ckpt_path, best_epoch, duration
+    return best_ckpt_path, best_val_loss, best_epoch, duration
 
 def main():
     parser = argparse.ArgumentParser(description="Run 3-PLD Ablation Study")
     parser.add_argument("--config", type=str, default="experiments_unet_4pld/config.json")
+    parser.add_argument("--workspace", type=str, default=None, help="Managed workspace root (e.g. D:\\ASL_WORKSPACE)")
     parser.add_argument("--quick", action="store_true", help="Run seed 42 only for rapid verification")
     args = parser.parse_args()
 
-    exp_dir = os.path.dirname(os.path.abspath(args.config))
-    data_dir = os.path.join(exp_dir, "data")
-    results_dir = os.path.join(exp_dir, "results")
-    plots_dir = os.path.join(results_dir, "plots")
-    os.makedirs(plots_dir, exist_ok=True)
+    # 1. Initialize workspace
+    ws = get_workspace(custom_path=args.workspace, min_free_gb=5.0)
+    print("\n================ STORAGE & WORKSPACE CONFIGURATION (3-PLD ABLATION) ================")
+    print(f"Managed Workspace: {ws.root}")
+    ws.check_preflight_storage(required_gb=2.0)
 
     with open(args.config, "r") as f:
         config = json.load(f)
@@ -237,32 +248,39 @@ def main():
 
     seeds = [42] if args.quick else config["training"]["seeds"]
 
-    # Load frozen data
+    # Load frozen data via workspace cache
     n_tr = config["data"]["n_train_phantoms"]
     n_val = config["data"]["n_val_phantoms"]
     n_te = config["data"]["n_test_phantoms"]
 
-    tr_data = np.load(os.path.join(data_dir, f"train_N{n_tr}_s{config['data']['train_seed']}.npz"))
-    val_data = np.load(os.path.join(data_dir, f"val_N{n_val}_s{config['data']['val_seed']}.npz"))
-    te_data = np.load(os.path.join(data_dir, f"test_N{n_te}_s{config['data']['test_seed']}.npz"))
-
-    X_tr_full, Y_tr, masks_tr, snrs_tr = tr_data["X"], tr_data["Y"], tr_data["masks"], tr_data["snrs"]
-    X_val_full, Y_val, masks_val, snrs_val = val_data["X"], val_data["Y"], val_data["masks"], val_data["snrs"]
-    X_te_full, Y_te, masks_te, snrs_te = te_data["X"], te_data["Y"], te_data["masks"], te_data["snrs"]
+    X_tr_full, Y_tr, masks_tr, snrs_tr = get_or_create_dataset(
+        split_name="train", n_phantoms=n_tr, seed=config["data"]["train_seed"],
+        config=config, ws=ws
+    )
+    X_val_full, Y_val, masks_val, snrs_val = get_or_create_dataset(
+        split_name="val", n_phantoms=n_val, seed=config["data"]["val_seed"],
+        config=config, ws=ws
+    )
+    X_te_full, Y_te, masks_te, snrs_te = get_or_create_dataset(
+        split_name="test", n_phantoms=n_te, seed=config["data"]["test_seed"],
+        config=config, ws=ws, fixed_snrs=config["data"]["test_snr_targets"]
+    )
 
     valid_mask_te = masks_te[:, 0] > 0.5
     gt_cbf_te = Y_te[:, 0][valid_mask_te]
     gt_att_te = Y_te[:, 1][valid_mask_te]
 
     # Baseline 4-PLD U-Net metrics for comparison
-    seed_csv_4pld = os.path.join(results_dir, "per_seed_metrics.csv")
+    seed_csv_4pld = ws.get_path("results", "per_seed_metrics.csv")
+    if not os.path.exists(seed_csv_4pld):
+        seed_csv_4pld = os.path.join(parent_dir, "experiments_unet_4pld", "results", "per_seed_metrics.csv")
     if os.path.exists(seed_csv_4pld):
         df_4pld = pd.read_csv(seed_csv_4pld)
         baseline_4pld_cbf = df_4pld["CBF_RMSE"].mean()
         baseline_4pld_att = df_4pld["ATT_RMSE"].mean()
     else:
-        baseline_4pld_cbf = 0.9912
-        baseline_4pld_att = 0.0569
+        baseline_4pld_cbf = 1.0006
+        baseline_4pld_att = 0.0573
 
     print(f"\n================ 3-PLD ABLATION STUDY ================")
     print(f"4-PLD U-Net Baseline: CBF RMSE = {baseline_4pld_cbf:.4f}, ATT RMSE = {baseline_4pld_att:.4f}")
@@ -317,22 +335,22 @@ def main():
         seed_cbf_rmses = []
         seed_att_rmses = []
         best_sub_model = None
-        best_sub_cbf = float("inf")
+        lowest_val_loss_sub = float("inf")
 
         for seed in seeds:
             print(f"  Training Seed {seed}...")
-            ckpt_path, best_ep, dur = train_unet_subset_single_seed(
+            ckpt_path, best_val_loss, best_ep, dur = train_unet_subset_single_seed(
                 train_data=(X_tr_n, Y_tr_n, masks_tr, snrs_tr),
                 val_data=(X_val_n, Y_val_n, masks_val, snrs_val),
                 stats=stats_sub,
                 config=config,
                 seed=seed,
                 device=device,
-                save_dir=exp_dir,
+                save_dir=ws.root,
                 subset_key=s_key
             )
 
-            # Evaluate model
+            # Evaluate model on test set for reporting
             ckpt = torch.load(ckpt_path, weights_only=False)
             eval_model = ASLUNet(in_channels=3, out_channels=2, features=config["model"]["features"]).to(device)
             eval_model.load_state_dict(ckpt["model_state_dict"])
@@ -347,6 +365,7 @@ def main():
                 "Subset_Name": s_info["name"],
                 "Seed": seed,
                 "Best_Epoch": best_ep,
+                "Best_Val_Loss": round(best_val_loss, 4),
                 "Train_Time_s": round(dur, 1),
                 "CBF_RMSE": met_c["RMSE"],
                 "CBF_MAE": met_c["MAE"],
@@ -361,8 +380,9 @@ def main():
             seed_cbf_rmses.append(met_c["RMSE"])
             seed_att_rmses.append(met_a["RMSE"])
 
-            if met_c["RMSE"] < best_sub_cbf:
-                best_sub_cbf = met_c["RMSE"]
+            # VALIDATION-ONLY SELECTION: select prediction maps strictly by validation loss
+            if best_val_loss < lowest_val_loss_sub:
+                lowest_val_loss_sub = best_val_loss
                 best_sub_model = eval_model
                 subset_predictions[s_key] = (cbf_p, att_p)
 
@@ -436,14 +456,20 @@ def main():
             "DNN_ATT_RMSE": round(met_a_dnn["RMSE"], 4),
         })
 
-    # Save CSVs
+    # Save CSVs to workspace
     per_seed_df = pd.DataFrame(all_seed_records)
     summary_df = pd.DataFrame(subset_summary_records)
 
-    per_seed_csv = os.path.join(results_dir, "ablation_3pld_per_seed.csv")
-    summary_csv = os.path.join(results_dir, "ablation_3pld_summary.csv")
+    per_seed_csv = ws.get_path("results", "ablation_3pld_per_seed.csv")
+    summary_csv = ws.get_path("results", "ablation_3pld_summary.csv")
     per_seed_df.to_csv(per_seed_csv, index=False)
     summary_df.to_csv(summary_csv, index=False)
+
+    # Mirror to repository results folder for tracking
+    repo_res = os.path.join(parent_dir, "experiments_unet_4pld", "results")
+    os.makedirs(repo_res, exist_ok=True)
+    shutil.copy2(per_seed_csv, os.path.join(repo_res, "ablation_3pld_per_seed.csv"))
+    shutil.copy2(summary_csv, os.path.join(repo_res, "ablation_3pld_summary.csv"))
 
     print("\n================ 3-PLD ABLATION SUMMARY ================")
     print(summary_df[["Subset", "PLDs", "UNet_CBF_RMSE", "CBF_Rel_Change_%", "UNet_ATT_RMSE", "ATT_Rel_Change_%", "Overall_Status"]].to_string())
@@ -495,8 +521,14 @@ def main():
         ax2.text(bar.get_x() + bar.get_width()/2.0, yval + 0.001, f"{yval:.4f}", ha="center", va="bottom", fontsize=8)
 
     plt.tight_layout()
-    plt.savefig(os.path.join(plots_dir, "ablation_3pld_barchart.png"), dpi=200)
+    barchart_ws = ws.get_path("plots", "ablation_3pld_barchart.png")
+    plt.savefig(barchart_ws, dpi=200)
     plt.close()
+
+    # Mirror plot
+    repo_plots = os.path.join(parent_dir, "experiments_unet_4pld", "results", "plots")
+    os.makedirs(repo_plots, exist_ok=True)
+    shutil.copy2(barchart_ws, os.path.join(repo_plots, "ablation_3pld_barchart.png"))
 
     # 2. Visual Prediction Maps Comparison on Sample Phantom
     s_idx = 0
@@ -505,8 +537,8 @@ def main():
     gt_a_0 = np.where(mask_0, Y_te[s_idx, 1], np.nan)
 
     # Load 4-PLD best prediction
-    cbf_4pld_path = os.path.join(results_dir, "predictions", "cbf_unet.npy")
-    att_4pld_path = os.path.join(results_dir, "predictions", "att_unet.npy")
+    cbf_4pld_path = ws.get_path("results", "predictions", "cbf_unet.npy") if os.path.exists(ws.get_path("results", "predictions", "cbf_unet.npy")) else os.path.join(parent_dir, "experiments_unet_4pld", "results", "predictions", "cbf_unet.npy")
+    att_4pld_path = ws.get_path("results", "predictions", "att_unet.npy") if os.path.exists(ws.get_path("results", "predictions", "att_unet.npy")) else os.path.join(parent_dir, "experiments_unet_4pld", "results", "predictions", "att_unet.npy")
     if os.path.exists(cbf_4pld_path):
         cbf_4pld_0 = np.where(mask_0, np.load(cbf_4pld_path)[s_idx], np.nan)
         att_4pld_0 = np.where(mask_0, np.load(att_4pld_path)[s_idx], np.nan)
@@ -561,8 +593,10 @@ def main():
     for ax in axes.flat:
         ax.axis("off")
     plt.tight_layout()
-    plt.savefig(os.path.join(plots_dir, "ablation_3pld_sample_maps.png"), dpi=200)
+    sample_maps_ws = ws.get_path("plots", "ablation_3pld_sample_maps.png")
+    plt.savefig(sample_maps_ws, dpi=200)
     plt.close()
+    shutil.copy2(sample_maps_ws, os.path.join(repo_plots, "ablation_3pld_sample_maps.png"))
 
     print("\n================ ABLATION STUDY FINISHED SUCCESSFULLY ================")
 

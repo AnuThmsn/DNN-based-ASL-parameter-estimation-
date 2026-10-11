@@ -1,0 +1,4 @@
+Comparison,N_Phantoms,CBF Mean Diff,CBF 95% CI,CBF t-test p-value,CBF Wilcoxon p-value,CBF Significant (p<0.05),ATT Mean Diff,ATT 95% CI,ATT t-test p-value,ATT Wilcoxon p-value,ATT Significant (p<0.05)
+U-Net vs Point-wise DNN,25,-1.5707,"[-1.7064, -1.4350]",3.07e-18,5.96e-08,True,-0.1617,"[-0.1722, -0.1511]",4.65e-21,5.96e-08,True
+U-Net vs Bayesian (Calibrated),25,-2.1757,"[-2.3025, -2.0488]",3.14e-22,5.96e-08,True,-0.2672,"[-0.2803, -0.2541]",5.38e-24,5.96e-08,True
+U-Net vs NLLS (TRF),25,-2.3786,"[-2.5676, -2.1896]",4.42e-19,5.96e-08,True,-0.2562,"[-0.2719, -0.2406]",9.10e-22,5.96e-08,True

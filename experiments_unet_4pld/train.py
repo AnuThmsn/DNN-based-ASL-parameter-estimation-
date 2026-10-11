@@ -212,18 +212,7 @@ def train_unet_single_seed(
                 break
 
     train_duration = time.time() - start_train_time
-    print(f"Training completed in {train_duration:.1f}s. Best Epoch: {best_epoch}")
-
-    # Save final checkpoint
-    final_ckpt_path = os.path.join(ckpt_dir, f"unet_final_seed_{seed}.pth")
-    torch.save({
-        "epoch": epoch,
-        "model_state_dict": model.state_dict(),
-        "stats": stats,
-        "config": config,
-        "seed": seed,
-        "history": history
-    }, final_ckpt_path)
+    print(f"Training completed in {train_duration:.1f}s. Best Epoch: {best_epoch} (Val Loss: {best_val_loss:.4f})")
 
     # Save history dataframe
     history_df = pd.DataFrame(history)
@@ -258,7 +247,7 @@ def train_unet_single_seed(
     plt.savefig(plot_path, dpi=200)
     plt.close()
 
-    return best_ckpt_path, history_df, train_duration
+    return best_ckpt_path, best_val_loss, history_df, train_duration
 
 if __name__ == "__main__":
     print("Testing train script with dummy data...")
@@ -285,5 +274,5 @@ if __name__ == "__main__":
     tr_d = (X_n, Y_n, dummy_M, dummy_S)
     val_d = (X_n, Y_n, dummy_M, dummy_S)
 
-    ckpt, hist, dur = train_unet_single_seed(tr_d, val_d, stats, cfg, seed=42)
+    ckpt, vloss, hist, dur = train_unet_single_seed(tr_d, val_d, stats, cfg, seed=42)
     print("Train module smoke test passed successfully!")

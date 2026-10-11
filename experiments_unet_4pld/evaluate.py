@@ -529,6 +529,9 @@ def run_full_evaluation(
         comparisons.insert(0, ("Point-wise DNN", "dnn_cbf", "dnn_att"))
 
     stat_rows = []
+    num_comparisons = len(comparisons)
+    rng_boot = np.random.RandomState(42)
+
     for baseline, c_col, a_col in comparisons:
         diff_cbf = p_df["unet_cbf"] - p_df[c_col]
         diff_att = p_df["unet_att"] - p_df[a_col]
@@ -539,22 +542,43 @@ def run_full_evaluation(
         t_a, p_t_a = stats_scipy.ttest_rel(p_df["unet_att"], p_df[a_col])
         w_a, p_w_a = stats_scipy.wilcoxon(diff_att)
 
+        # Standard parametric CI
         ci_c_low, ci_c_high = stats_scipy.t.interval(0.95, len(diff_cbf)-1, loc=np.mean(diff_cbf), scale=stats_scipy.sem(diff_cbf))
         ci_a_low, ci_a_high = stats_scipy.t.interval(0.95, len(diff_att)-1, loc=np.mean(diff_att), scale=stats_scipy.sem(diff_att))
+
+        # Phantom-level Bootstrap 95% CI (1000 resamples)
+        boot_c = [np.mean(rng_boot.choice(diff_cbf, size=len(diff_cbf), replace=True)) for _ in range(1000)]
+        boot_a = [np.mean(rng_boot.choice(diff_att, size=len(diff_att), replace=True)) for _ in range(1000)]
+        bci_c_low, bci_c_high = np.percentile(boot_c, [2.5, 97.5])
+        bci_a_low, bci_a_high = np.percentile(boot_a, [2.5, 97.5])
+
+        # Effect size (Cohen's d)
+        d_cbf = float(np.mean(diff_cbf) / (np.std(diff_cbf, ddof=1) + 1e-12))
+        d_att = float(np.mean(diff_att) / (np.std(diff_att, ddof=1) + 1e-12))
+
+        # Bonferroni multiple testing correction
+        p_c_bonf = min(1.0, float(p_t_c) * num_comparisons)
+        p_a_bonf = min(1.0, float(p_t_a) * num_comparisons)
 
         stat_rows.append({
             "Comparison": f"U-Net vs {baseline}",
             "N_Phantoms": len(p_df),
             "CBF Mean Diff": round(float(np.mean(diff_cbf)), 4),
-            "CBF 95% CI": f"[{ci_c_low:.4f}, {ci_c_high:.4f}]",
-            "CBF t-test p-value": f"{p_t_c:.2e}",
-            "CBF Wilcoxon p-value": f"{p_w_c:.2e}",
-            "CBF Significant (p<0.05)": bool(p_t_c < 0.05),
+            "CBF Parametric 95% CI": f"[{ci_c_low:.4f}, {ci_c_high:.4f}]",
+            "CBF Bootstrap 95% CI": f"[{bci_c_low:.4f}, {bci_c_high:.4f}]",
+            "CBF Cohen d": round(d_cbf, 3),
+            "CBF t-test p": f"{p_t_c:.2e}",
+            "CBF Bonferroni p": f"{p_c_bonf:.2e}",
+            "CBF Wilcoxon p": f"{p_w_c:.2e}",
+            "CBF Significant": bool(p_c_bonf < 0.05),
             "ATT Mean Diff": round(float(np.mean(diff_att)), 4),
-            "ATT 95% CI": f"[{ci_a_low:.4f}, {ci_a_high:.4f}]",
-            "ATT t-test p-value": f"{p_t_a:.2e}",
-            "ATT Wilcoxon p-value": f"{p_w_a:.2e}",
-            "ATT Significant (p<0.05)": bool(p_t_a < 0.05),
+            "ATT Parametric 95% CI": f"[{ci_a_low:.4f}, {ci_a_high:.4f}]",
+            "ATT Bootstrap 95% CI": f"[{bci_a_low:.4f}, {bci_a_high:.4f}]",
+            "ATT Cohen d": round(d_att, 3),
+            "ATT t-test p": f"{p_t_a:.2e}",
+            "ATT Bonferroni p": f"{p_a_bonf:.2e}",
+            "ATT Wilcoxon p": f"{p_w_a:.2e}",
+            "ATT Significant": bool(p_a_bonf < 0.05),
         })
 
     stat_df = pd.DataFrame(stat_rows)

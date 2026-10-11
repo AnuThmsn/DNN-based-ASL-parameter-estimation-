@@ -1,4 +1,4 @@
-Comparison,N_Phantoms,CBF Mean Diff,CBF 95% CI,CBF t-test p-value,CBF Wilcoxon p-value,CBF Significant (p<0.05),ATT Mean Diff,ATT 95% CI,ATT t-test p-value,ATT Wilcoxon p-value,ATT Significant (p<0.05)
-U-Net vs Point-wise DNN,25,-1.5707,"[-1.7064, -1.4350]",3.07e-18,5.96e-08,True,-0.1617,"[-0.1722, -0.1511]",4.65e-21,5.96e-08,True
-U-Net vs Bayesian (Calibrated),25,-2.1757,"[-2.3025, -2.0488]",3.14e-22,5.96e-08,True,-0.2672,"[-0.2803, -0.2541]",5.38e-24,5.96e-08,True
-U-Net vs NLLS (TRF),25,-2.3786,"[-2.5676, -2.1896]",4.42e-19,5.96e-08,True,-0.2562,"[-0.2719, -0.2406]",9.10e-22,5.96e-08,True
+Comparison,N_Phantoms,CBF Mean Diff,CBF Parametric 95% CI,CBF Bootstrap 95% CI,CBF Cohen d,CBF t-test p,CBF Bonferroni p,CBF Wilcoxon p,CBF Significant,ATT Mean Diff,ATT Parametric 95% CI,ATT Bootstrap 95% CI,ATT Cohen d,ATT t-test p,ATT Bonferroni p,ATT Wilcoxon p,ATT Significant
+U-Net vs Point-wise DNN,25,-1.5685,"[-1.6894, -1.4475]","[-1.6772, -1.4540]",-5.353,2.21e-19,6.62e-19,5.96e-08,True,-0.161,"[-0.1712, -0.1507]","[-0.1698, -0.1510]",-6.464,2.68e-21,8.04e-21,5.96e-08,True
+U-Net vs Bayesian (Calibrated),25,-2.1788,"[-2.3033, -2.0543]","[-2.2914, -2.0606]",-7.224,1.96e-22,5.89e-22,5.96e-08,True,-0.2664,"[-0.2795, -0.2534]","[-0.2782, -0.2546]",-8.412,5.37e-24,1.61e-23,5.96e-08,True
+U-Net vs NLLS (TRF),25,-2.3818,"[-2.5569, -2.2066]","[-2.5479, -2.2041]",-5.613,7.32e-20,2.20e-19,5.96e-08,True,-0.2555,"[-0.2711, -0.2398]","[-0.2688, -0.2405]",-6.732,1.03e-21,3.10e-21,5.96e-08,True

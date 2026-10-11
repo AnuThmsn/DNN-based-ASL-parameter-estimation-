@@ -5,4 +5,5 @@ __pycache__/
 experiments_unet_4pld/data/*.npz
 experiments_unet_4pld/checkpoints/*.pth
 experiments_unet_4pld/results/predictions/*.npy
+experiments_unet_4pld/historical_snapshot_47f83e0/predictions/*.npy
 experiments_unet_4pld/results_test/

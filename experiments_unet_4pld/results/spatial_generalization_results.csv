@@ -1,0 +1,5 @@
+Challenge_Case,UNet_CBF_RMSE,DNN_CBF_RMSE,Bayes_CBF_RMSE,UNet_ATT_RMSE,DNN_ATT_RMSE,Bayes_ATT_RMSE,UNet_CBF_SSIM,UNet_ATT_SSIM,Spatial_Advantage
+focal_lesion,7.704,1.871,3.246,0.4335,0.2094,0.2878,0.8804,0.7388,Degraded
+hydrocephalus,5.152,1.859,3.937,0.2632,0.0972,0.2651,0.9422,0.874,Degraded
+discontinuous_step,5.888,3.519,2.038,0.349,0.2621,0.257,0.9187,0.4948,Degraded
+extreme_watershed,3.436,3.189,3.629,0.2659,0.2682,0.2892,0.9093,0.8348,Degraded

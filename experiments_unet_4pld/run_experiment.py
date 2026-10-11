@@ -3,6 +3,7 @@ import sys
 import json
 import time
 import argparse
+import shutil
 import numpy as np
 import pandas as pd
 import torch
@@ -11,7 +12,8 @@ parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from experiments_unet_4pld.generate_spatial_data import generate_spatial_dataset
+from experiments_unet_4pld.workspace import get_workspace
+from experiments_unet_4pld.dataset_cache import get_or_create_dataset
 from experiments_unet_4pld.dataset import (
     compute_normalization_stats,
     normalize_dataset,
@@ -20,22 +22,26 @@ from experiments_unet_4pld.dataset import (
 from experiments_unet_4pld.model import ASLUNet
 from experiments_unet_4pld.train import train_unet_single_seed
 from experiments_unet_4pld.evaluate import run_full_evaluation, evaluate_unet, calc_metrics
+from experiments_unet_4pld.package_model import package_final_four_pld_model
 
 def main():
-    parser = argparse.ArgumentParser(description="Run 4-PLD Spatial U-Net ASL Experiment")
+    parser = argparse.ArgumentParser(description="Run Storage-Safe 4-PLD Spatial U-Net ASL Experiment")
     parser.add_argument("--config", type=str, default="experiments_unet_4pld/config.json", help="Path to config.json")
+    parser.add_argument("--workspace", type=str, default=None, help="Custom workspace directory (e.g., D:\\ASL_WORKSPACE)")
     parser.add_argument("--smoke_test", action="store_true", help="Run quick smoke test with minimal phantoms and epochs")
     parser.add_argument("--epochs", type=int, default=None, help="Override max epochs")
     parser.add_argument("--seeds", nargs="+", type=int, default=None, help="List of seeds to run")
     args = parser.parse_args()
 
-    exp_dir = os.path.dirname(os.path.abspath(args.config))
-    data_dir = os.path.join(exp_dir, "data")
-    ckpt_dir = os.path.join(exp_dir, "checkpoints")
-    results_dir = os.path.join(exp_dir, "results")
-    os.makedirs(data_dir, exist_ok=True)
-    os.makedirs(ckpt_dir, exist_ok=True)
-    os.makedirs(results_dir, exist_ok=True)
+    # 1. Initialize Centralized Workspace Manager (Protects C: Drive)
+    ws = get_workspace(custom_path=args.workspace, min_free_gb=5.0)
+    print("\n================ STORAGE & WORKSPACE CONFIGURATION ================")
+    print(f"Managed Workspace Root: {ws.root}")
+    for name, p in ws.subdirs.items():
+        print(f"  [{name.upper()}] -> {p}")
+
+    # Pre-flight disk space safety check
+    ws.check_preflight_storage(required_gb=2.0)
 
     with open(args.config, "r") as f:
         config = json.load(f)
@@ -58,59 +64,27 @@ def main():
         n_te = config["data"]["n_test_phantoms"]
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Device: {device}")
-    if torch.cuda.is_available():
-        print(f"GPU: {torch.cuda.get_device_name(0)}")
+    print(f"\nCompute Device: {device} ({torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'})")
 
-    img_size = config["data"]["img_size"]
+    # 2. Dataset Retrieval & Verification (Zero Redundant Generation)
+    print("\n================ DATASET VALIDATION & LOADING ================")
+    X_tr, Y_tr, masks_tr, snrs_tr = get_or_create_dataset(
+        split_name="train", n_phantoms=n_tr, seed=config["data"]["train_seed"],
+        config=config, ws=ws
+    )
+    X_val, Y_val, masks_val, snrs_val = get_or_create_dataset(
+        split_name="val", n_phantoms=n_val, seed=config["data"]["val_seed"],
+        config=config, ws=ws
+    )
+    X_te, Y_te, masks_te, snrs_te = get_or_create_dataset(
+        split_name="test", n_phantoms=n_te, seed=config["data"]["test_seed"],
+        config=config, ws=ws, fixed_snrs=config["data"]["test_snr_targets"]
+    )
 
-    # 1. Dataset Generation / Loading
-    train_npz = os.path.join(data_dir, f"train_N{n_tr}_s{config['data']['train_seed']}.npz")
-    val_npz = os.path.join(data_dir, f"val_N{n_val}_s{config['data']['val_seed']}.npz")
-    test_npz = os.path.join(data_dir, f"test_N{n_te}_s{config['data']['test_seed']}.npz")
-
-    if os.path.exists(train_npz) and not args.smoke_test:
-        print(f"Loading cached training data from {train_npz}...")
-        tr_data = np.load(train_npz)
-        X_tr, Y_tr, masks_tr, snrs_tr = tr_data["X"], tr_data["Y"], tr_data["masks"], tr_data["snrs"]
-    else:
-        print(f"Generating {n_tr} training phantoms (seed {config['data']['train_seed']})...")
-        X_tr, Y_tr, masks_tr, snrs_tr, _ = generate_spatial_dataset(
-            n_phantoms=n_tr, seed=config["data"]["train_seed"], img_size=img_size
-        )
-        if not args.smoke_test:
-            np.savez_compressed(train_npz, X=X_tr, Y=Y_tr, masks=masks_tr, snrs=snrs_tr)
-
-    if os.path.exists(val_npz) and not args.smoke_test:
-        print(f"Loading cached validation data from {val_npz}...")
-        val_data = np.load(val_npz)
-        X_val, Y_val, masks_val, snrs_val = val_data["X"], val_data["Y"], val_data["masks"], val_data["snrs"]
-    else:
-        print(f"Generating {n_val} validation phantoms (seed {config['data']['val_seed']})...")
-        X_val, Y_val, masks_val, snrs_val, _ = generate_spatial_dataset(
-            n_phantoms=n_val, seed=config["data"]["val_seed"], img_size=img_size
-        )
-        if not args.smoke_test:
-            np.savez_compressed(val_npz, X=X_val, Y=Y_val, masks=masks_val, snrs=snrs_val)
-
-    if os.path.exists(test_npz) and not args.smoke_test:
-        print(f"Loading cached test data from {test_npz}...")
-        te_data = np.load(test_npz)
-        X_te, Y_te, masks_te, snrs_te = te_data["X"], te_data["Y"], te_data["masks"], te_data["snrs"]
-    else:
-        print(f"Generating {n_te} test phantoms with targeted SNR tracking (seed {config['data']['test_seed']})...")
-        # Ensure targeted tracking of SNR=10 and SNR=15
-        target_snrs = [10.0, 15.0]
-        X_te, Y_te, masks_te, snrs_te, _ = generate_spatial_dataset(
-            n_phantoms=n_te, seed=config["data"]["test_seed"], img_size=img_size, fixed_snrs=target_snrs
-        )
-        if not args.smoke_test:
-            np.savez_compressed(test_npz, X=X_te, Y=Y_te, masks=masks_te, snrs=snrs_te)
-
-    # 2. Normalization parameters computed STRICTLY from training set
-    print("Computing normalization statistics from training set...")
+    # 3. Normalization parameters computed STRICTLY from training set
+    print("\nComputing normalization statistics from training set...")
     stats = compute_normalization_stats(X_tr, Y_tr, masks_tr)
-    # Save stats
+    stats_json_path = ws.get_path("data", "normalization_stats.json")
     stats_serializable = {
         "X_mean": stats["X_mean"].tolist(),
         "X_std": stats["X_std"].tolist(),
@@ -119,7 +93,7 @@ def main():
         "att_mean": stats["att_mean"],
         "att_std": stats["att_std"],
     }
-    with open(os.path.join(data_dir, "normalization_stats.json"), "w") as f:
+    with open(stats_json_path, "w") as f:
         json.dump(stats_serializable, f, indent=2)
 
     print(f"Training Target Stats: CBF Mean={stats['cbf_mean']:.2f}, Std={stats['cbf_std']:.2f} | "
@@ -129,11 +103,12 @@ def main():
     X_val_n, Y_val_n = normalize_dataset(X_val, Y_val, masks_val, stats)
     X_te_n, Y_te_n = normalize_dataset(X_te, Y_te, masks_te, stats)
 
-    # 3. Multi-Seed Training
+    # 4. Multi-Seed Training with Strict Validation-Only Model Selection
     seed_records = []
-    best_overall_seed = seeds[0]
-    best_cbf_rmse = float("inf")
-    best_model_state = None
+    lowest_val_loss = float("inf")
+    best_val_seed = seeds[0]
+    best_ckpt_for_benchmark = None
+    best_history_csv = None
 
     valid_mask_te = masks_te[:, 0] > 0.5
     gt_cbf_te = Y_te[:, 0][valid_mask_te]
@@ -141,17 +116,24 @@ def main():
 
     for seed in seeds:
         print(f"\n================ TRAINING SEED {seed} ================")
-        ckpt_path, hist_df, duration = train_unet_single_seed(
+        ckpt_path, best_val_loss, hist_df, duration = train_unet_single_seed(
             train_data=(X_tr_n, Y_tr_n, masks_tr, snrs_tr),
             val_data=(X_val_n, Y_val_n, masks_val, snrs_val),
             stats=stats,
             config=config,
             seed=seed,
             device=device,
-            save_dir=exp_dir
+            save_dir=ws.root
         )
 
-        # Load best checkpoint for this seed and evaluate on test set
+        # STRICT VALIDATION-ONLY SELECTION: Checkpoint chosen by validation loss, NEVER test performance
+        if best_val_loss < lowest_val_loss:
+            lowest_val_loss = best_val_loss
+            best_val_seed = seed
+            best_ckpt_for_benchmark = ckpt_path
+            best_history_csv = ws.get_path("logs", f"history_seed_{seed}.csv")
+
+        # Evaluate on test set for reporting purposes
         ckpt = torch.load(ckpt_path, weights_only=False)
         eval_model = ASLUNet(
             in_channels=config["model"]["in_channels"],
@@ -168,6 +150,7 @@ def main():
         rec = {
             "Seed": seed,
             "Best_Epoch": ckpt["epoch"],
+            "Best_Val_Loss": round(best_val_loss, 4),
             "Train_Time_s": round(duration, 1),
             "CBF_RMSE": met_c["RMSE"],
             "CBF_MAE": met_c["MAE"],
@@ -181,41 +164,42 @@ def main():
             "ATT_CCC": met_a["CCC"]
         }
         seed_records.append(rec)
-        print(f"Seed {seed} Test Results: CBF RMSE = {met_c['RMSE']:.4f}, ATT RMSE = {met_a['RMSE']:.4f}")
-
-        if met_c["RMSE"] < best_cbf_rmse:
-            best_cbf_rmse = met_c["RMSE"]
-            best_overall_seed = seed
-            best_model_state = eval_model
+        print(f"Seed {seed} Test Results: Val Loss = {best_val_loss:.4f} | CBF RMSE = {met_c['RMSE']:.4f}, ATT RMSE = {met_a['RMSE']:.4f}")
 
     seed_df = pd.DataFrame(seed_records)
-    seed_csv = os.path.join(results_dir, "per_seed_metrics.csv")
-    seed_df.to_csv(seed_csv, index=False)
-    print("\n--- Per-Seed Verification Summary ---")
+    seed_csv_ws = ws.get_path("results", "per_seed_metrics.csv")
+    seed_df.to_csv(seed_csv_ws, index=False)
+
+    # Mirror metadata CSV to repo results for tracking
+    repo_results_dir = os.path.join(parent_dir, "experiments_unet_4pld", "results")
+    os.makedirs(repo_results_dir, exist_ok=True)
+    shutil.copy2(seed_csv_ws, os.path.join(repo_results_dir, "per_seed_metrics.csv"))
+
+    print("\n--- Per-Seed Verification Summary (Selected by Validation Loss) ---")
     print(seed_df.to_string())
+    print(f"\n[Validation Policy] Selected Model: Seed {best_val_seed} with Lowest Val Loss = {lowest_val_loss:.4f}")
 
-    # Multi-seed mean and std
-    cbf_mean_val, cbf_std_val = seed_df["CBF_RMSE"].mean(), seed_df["CBF_RMSE"].std()
-    att_mean_val, att_std_val = seed_df["ATT_RMSE"].mean(), seed_df["ATT_RMSE"].std()
-    print(f"\nFinal Multi-Seed U-Net Performance:")
-    print(f"CBF RMSE: {cbf_mean_val:.4f} ± {cbf_std_val:.4f}")
-    print(f"ATT RMSE: {att_mean_val:.4f} ± {att_std_val:.4f}")
+    # 5. Full Comparative Benchmark Using the Validation-Selected Model
+    print(f"\n--- Running Full Comparative Benchmark (Model Selected by Val Loss: Seed {best_val_seed}) ---")
+    benchmark_model = ASLUNet(
+        in_channels=config["model"]["in_channels"],
+        out_channels=config["model"]["out_channels"],
+        features=config["model"]["features"]
+    ).to(device)
+    benchmark_model.load_state_dict(torch.load(best_ckpt_for_benchmark, weights_only=False)["model_state_dict"])
+    benchmark_model.eval()
 
-    # 4. Full Benchmark against Point-wise DNN, Bayesian, NLLS, and References
-    print(f"\n--- Running Full Comparative Benchmark (Best Seed: {best_overall_seed}) ---")
-    # Flatten valid training voxels for point-wise DNN baseline training
+    # Flatten training voxels for point-wise DNN baseline
     v_tr = masks_tr[:, 0] > 0.5
-    X_tr_vox = X_tr.transpose(0, 2, 3, 1)[v_tr] # [N_valid, 4]
-    Y_tr_vox = Y_tr.transpose(0, 2, 3, 1)[v_tr] # [N_valid, 2]
-
-    # Subsample training voxels if too large for quick point-wise MLP fit
+    X_tr_vox = X_tr.transpose(0, 2, 3, 1)[v_tr]
+    Y_tr_vox = Y_tr.transpose(0, 2, 3, 1)[v_tr]
     if len(X_tr_vox) > 200_000:
         sub_idx = np.random.choice(len(X_tr_vox), size=200_000, replace=False)
         X_tr_vox = X_tr_vox[sub_idx]
         Y_tr_vox = Y_tr_vox[sub_idx]
 
-    benchmark_df = run_full_evaluation(
-        unet_model=best_model_state,
+    run_full_evaluation(
+        unet_model=benchmark_model,
         X_test=X_te,
         Y_test=Y_te,
         masks_test=masks_te,
@@ -224,10 +208,55 @@ def main():
         device=device,
         X_tr_vox=X_tr_vox,
         Y_tr_vox=Y_tr_vox,
-        out_dir=results_dir
+        out_dir=ws.get_path("results")
     )
 
-    print("\n================ EXPERIMENT COMPLETED SUCCESSFULLY ================")
+    # Mirror result tables and plots to repo results directory
+    for item in ["matched_benchmark_25_phantoms.csv", "master_comparison.csv",
+                 "paired_statistical_tests.csv", "per_phantom_metrics.csv",
+                 "snr_stratified_metrics.csv", "spatial_metrics.json"]:
+        src = ws.get_path("results", item)
+        if os.path.exists(src):
+            shutil.copy2(src, os.path.join(repo_results_dir, item))
+
+    # Mirror plots
+    repo_plots_dir = os.path.join(repo_results_dir, "plots")
+    os.makedirs(repo_plots_dir, exist_ok=True)
+    for plot_file in os.listdir(ws.get_path("plots")):
+        src = os.path.join(ws.get_path("plots"), plot_file)
+        if os.path.isfile(src):
+            shutil.copy2(src, os.path.join(repo_plots_dir, plot_file))
+
+    # 6. Deliverable Packaging: Self-Contained Final 4-PLD Artifact
+    print("\n================ PACKAGING FINAL FOUR-PLD MODEL ================")
+    final_test_row = seed_df[seed_df["Seed"] == best_val_seed].iloc[0].to_dict()
+    final_model_dir = ws.get_path("final_model")
+    package_final_four_pld_model(
+        selected_ckpt_path=best_ckpt_for_benchmark,
+        config=config,
+        stats=stats,
+        history_csv_path=best_history_csv,
+        test_metrics=final_test_row,
+        output_dir=final_model_dir
+    )
+
+    # 7. Self-Verify Inference Script in a Clean Subprocess
+    print("\nVerifying inference script in clean execution...")
+    inf_script = os.path.join(final_model_dir, "inference.py")
+    test_ret = os.system(f'python "{inf_script}"')
+    if test_ret != 0:
+        raise RuntimeError("Inference self-verification failed!")
+
+    # 8. Report Final Storage Consumption
+    print("\n================ STORAGE CONSUMPTION SUMMARY ================")
+    summary = ws.get_storage_summary()
+    print(f"Total Workspace Size: {summary['total_mb']:.2f} MB")
+    for k, v in summary.items():
+        if k not in ["total_mb", "workspace_free_gb"]:
+            print(f"  - {k}: {v:.2f} MB")
+    print(f"Remaining Free Space on Workspace Drive: {summary['workspace_free_gb']:.2f} GB")
+
+    print("\n================ 4-PLD BENCHMARK COMPLETED SUCCESSFULLY ================")
 
 if __name__ == "__main__":
     main()
