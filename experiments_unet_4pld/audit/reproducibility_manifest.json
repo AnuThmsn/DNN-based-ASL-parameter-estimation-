@@ -1,7 +1,17 @@
 {
-  "experiment_name": "training_size_learning_curve",
-  "date_executed": "2026-10-12 02:24:41",
-  "sizes_completed": [
+  "study_name": "ASL-DNN Training-Set Size Generalization Study (Verified Complete)",
+  "last_updated": "2026-10-12 02:47:13",
+  "git_branch": "storage-safe-4pld-final",
+  "pld_protocol": {
+    "PLDs": [
+      1.525,
+      2.025,
+      2.525,
+      3.025
+    ],
+    "tau": 1.8
+  },
+  "sizes_evaluated": [
     100,
     200,
     400,
@@ -9,26 +19,200 @@
     1200,
     2400
   ],
-  "seeds_completed": [
+  "seeds_evaluated": [
     42,
     123,
     2024
   ],
+  "datasets": {
+    "train_nested_N2400": {
+      "path": "D:\\ASL_WORKSPACE\\data\\train_nested_N2400_s42.npz",
+      "sha256": "cfea08099e523d325ce04a3464932e186e767368e78d64794a297859fa51fd96"
+    },
+    "val_cohort": {
+      "path": "D:\\ASL_WORKSPACE\\data\\val_N100_s99.npz",
+      "sha256": "f9fca0308c6b216cd0ff1bcb1da91b917a1fb2020bc40e27496a33cef3111301"
+    },
+    "test_cohort": {
+      "path": "D:\\ASL_WORKSPACE\\data\\test_N100_s7.npz",
+      "sha256": "c853337a83a7a289790a5e1ae826c4990037bfae44ececa1b181f3192ad6893f"
+    }
+  },
   "total_runs_completed": 18,
-  "cohort_hashes": {
-    "validation_N100_s99": "f9fca0308c6b216cd0ff1bcb1da91b917a1fb2020bc40e27496a33cef3111301",
-    "test_N100_s7": "c853337a83a7a289790a5e1ae826c4990037bfae44ececa1b181f3192ad6893f",
-    "training_nested_pool_N2400": "cfea08099e523d325ce04a3464932e186e767368e78d64794a297859fa51fd96"
+  "checkpoints": {
+    "N100_seed_42": {
+      "path": "D:\\ASL_WORKSPACE\\experiments\\training_size_study\\checkpoints\\unet_N100_seed_42.pth",
+      "sha256": "877e31d61498e70eb6bf182ff2762c28511b3b421f62551eec47b070777ba182",
+      "best_epoch": 76,
+      "cbf_rmse": 1.268022058372615,
+      "att_rmse": 0.0682866049781832,
+      "cbf_ccc": 0.9960213179119708,
+      "att_ccc": 0.9845791130653994
+    },
+    "N100_seed_123": {
+      "path": "D:\\ASL_WORKSPACE\\experiments\\training_size_study\\checkpoints\\unet_N100_seed_123.pth",
+      "sha256": "d065802392d11a76511ef141b4cf25ea845045d8327baaf660043f0a383c23cb",
+      "best_epoch": 77,
+      "cbf_rmse": 1.2499877796644776,
+      "att_rmse": 0.068874376737656,
+      "cbf_ccc": 0.9961585280921876,
+      "att_ccc": 0.984335276221711
+    },
+    "N100_seed_2024": {
+      "path": "D:\\ASL_WORKSPACE\\experiments\\training_size_study\\checkpoints\\unet_N100_seed_2024.pth",
+      "sha256": "9c8d330cc8e0d46e1a81b7bd462b2a301e4c5ea1a3c2c94870b0f419e7657350",
+      "best_epoch": 62,
+      "cbf_rmse": 1.3054490296461738,
+      "att_rmse": 0.0728277382739666,
+      "cbf_ccc": 0.99579202012863,
+      "att_ccc": 0.9821846259802268
+    },
+    "N200_seed_42": {
+      "path": "D:\\ASL_WORKSPACE\\experiments\\training_size_study\\checkpoints\\unet_N200_seed_42.pth",
+      "sha256": "b74be4737b2e876099ab8568a0713677e4b311b57b501979676cff463cf7768f",
+      "best_epoch": 61,
+      "cbf_rmse": 1.13296471795065,
+      "att_rmse": 0.0639012220477856,
+      "cbf_ccc": 0.9968138180690018,
+      "att_ccc": 0.9863936521093356
+    },
+    "N200_seed_123": {
+      "path": "D:\\ASL_WORKSPACE\\experiments\\training_size_study\\checkpoints\\unet_N200_seed_123.pth",
+      "sha256": "307fb7e666d383e115906f35e47ef712a757fc1eb75d75e191c658f6236d986c",
+      "best_epoch": 63,
+      "cbf_rmse": 1.1687050413454323,
+      "att_rmse": 0.0657053152629686,
+      "cbf_ccc": 0.9966184813010056,
+      "att_ccc": 0.985817159708121
+    },
+    "N200_seed_2024": {
+      "path": "D:\\ASL_WORKSPACE\\experiments\\training_size_study\\checkpoints\\unet_N200_seed_2024.pth",
+      "sha256": "0969450562d305b2e9f87c8602a22f4cbd1de15ff3e2e67b4a7ae5183464d281",
+      "best_epoch": 51,
+      "cbf_rmse": 1.1331095596699787,
+      "att_rmse": 0.0636769012924992,
+      "cbf_ccc": 0.9968334238803612,
+      "att_ccc": 0.9864716010409792
+    },
+    "N400_seed_42": {
+      "path": "D:\\ASL_WORKSPACE\\experiments\\training_size_study\\checkpoints\\unet_N400_seed_42.pth",
+      "sha256": "be87b102fb022c4faff74a9574036381558d70c0218ef093860a23a33a93fab2",
+      "best_epoch": 46,
+      "cbf_rmse": 1.0967118154113449,
+      "att_rmse": 0.0600718205590479,
+      "cbf_ccc": 0.9970145186701512,
+      "att_ccc": 0.9879424400693276
+    },
+    "N400_seed_123": {
+      "path": "D:\\ASL_WORKSPACE\\experiments\\training_size_study\\checkpoints\\unet_N400_seed_123.pth",
+      "sha256": "824b722c39d1d73119b948af5feca1b8438bfb51c9efa6cb3c20eb8248fafc3d",
+      "best_epoch": 46,
+      "cbf_rmse": 1.0583510832072127,
+      "att_rmse": 0.0596955222201118,
+      "cbf_ccc": 0.9972232292880556,
+      "att_ccc": 0.9882599722535724
+    },
+    "N400_seed_2024": {
+      "path": "D:\\ASL_WORKSPACE\\experiments\\training_size_study\\checkpoints\\unet_N400_seed_2024.pth",
+      "sha256": "d7faf3719460985d0e19aeb6a06ed30e12d30caf65e8dd59191ee2d5723ba539",
+      "best_epoch": 37,
+      "cbf_rmse": 1.0731554911694912,
+      "att_rmse": 0.0613955641929277,
+      "cbf_ccc": 0.9971676665484932,
+      "att_ccc": 0.9874382841047096
+    },
+    "N600_seed_42": {
+      "path": "D:\\ASL_WORKSPACE\\experiments\\training_size_study\\checkpoints\\unet_N600_seed_42.pth",
+      "sha256": "05fdec9c3d33ceb652f749fd3f1803e00881a763e44878792ce55e62a0715290",
+      "best_epoch": 60,
+      "cbf_rmse": 0.965015238766453,
+      "att_rmse": 0.0559101062075612,
+      "cbf_ccc": 0.9976878804721776,
+      "att_ccc": 0.9896280657063936
+    },
+    "N600_seed_123": {
+      "path": "D:\\ASL_WORKSPACE\\experiments\\training_size_study\\checkpoints\\unet_N600_seed_123.pth",
+      "sha256": "64c05fccd866d35997fedd5ee054f37800732f4d8e3ca8f9524ad5ae1eb1796c",
+      "best_epoch": 66,
+      "cbf_rmse": 1.0138192684657852,
+      "att_rmse": 0.0581051962043537,
+      "cbf_ccc": 0.9974692472829204,
+      "att_ccc": 0.9887941094765512
+    },
+    "N600_seed_2024": {
+      "path": "D:\\ASL_WORKSPACE\\experiments\\training_size_study\\checkpoints\\unet_N600_seed_2024.pth",
+      "sha256": "d5c5df9794f9151454651beeaa915e811ba9a8f4fe6fd2cafff128d59105ed5d",
+      "best_epoch": 31,
+      "cbf_rmse": 1.023144961585544,
+      "att_rmse": 0.0578625119574229,
+      "cbf_ccc": 0.997432651136923,
+      "att_ccc": 0.9890026437218588
+    },
+    "N1200_seed_42": {
+      "path": "D:\\ASL_WORKSPACE\\experiments\\training_size_study\\checkpoints\\unet_N1200_seed_42.pth",
+      "sha256": "b5dc1bdaaff91488ec62bd707e338bf435d9bdd819820586648ee89363aba233",
+      "best_epoch": 41,
+      "cbf_rmse": 0.8978551562001605,
+      "att_rmse": 0.0510709353209847,
+      "cbf_ccc": 0.9979945861529644,
+      "att_ccc": 0.9912523378099748
+    },
+    "N1200_seed_123": {
+      "path": "D:\\ASL_WORKSPACE\\experiments\\training_size_study\\checkpoints\\unet_N1200_seed_123.pth",
+      "sha256": "bf0a4310e74ca5e458df94fad8d878437b0819844ca89663dd9753ed7281080f",
+      "best_epoch": 28,
+      "cbf_rmse": 0.940265948288038,
+      "att_rmse": 0.0525786529367627,
+      "cbf_ccc": 0.997808195786941,
+      "att_ccc": 0.9907503453821144
+    },
+    "N1200_seed_2024": {
+      "path": "D:\\ASL_WORKSPACE\\experiments\\training_size_study\\checkpoints\\unet_N1200_seed_2024.pth",
+      "sha256": "caa0f557e07b3f41a4d19402fe35ecf988740c657891accc7306eda73f608b75",
+      "best_epoch": 53,
+      "cbf_rmse": 0.9066822508886384,
+      "att_rmse": 0.0521441542094076,
+      "cbf_ccc": 0.997974452964738,
+      "att_ccc": 0.9910034034913512
+    },
+    "N2400_seed_42": {
+      "path": "D:\\ASL_WORKSPACE\\experiments\\training_size_study\\checkpoints\\unet_N2400_seed_42.pth",
+      "sha256": "0169ab40ebb4c4f0ba4339640b18dc61377c42505b207d8c469d413b954a9690",
+      "best_epoch": 57,
+      "cbf_rmse": 0.7969594597816467,
+      "att_rmse": 0.0477551631629467,
+      "cbf_ccc": 0.9984269713400008,
+      "att_ccc": 0.9924606526650244
+    },
+    "N2400_seed_123": {
+      "path": "D:\\ASL_WORKSPACE\\experiments\\training_size_study\\checkpoints\\unet_N2400_seed_123.pth",
+      "sha256": "10810ead787e955f56a0881de50f4d8d87218bf9fafe45a47038ad36a1123baa",
+      "best_epoch": 55,
+      "cbf_rmse": 0.8029947876930237,
+      "att_rmse": 0.048948835581541,
+      "cbf_ccc": 0.9984119500614144,
+      "att_ccc": 0.992047561403032
+    },
+    "N2400_seed_2024": {
+      "path": "D:\\ASL_WORKSPACE\\experiments\\training_size_study\\checkpoints\\unet_N2400_seed_2024.pth",
+      "sha256": "8434f9f230c86ebb4453550f41499d35f2877567e0b3c8f586dca9c264d86af8",
+      "best_epoch": 43,
+      "cbf_rmse": 0.8388454914093018,
+      "att_rmse": 0.0502047315239906,
+      "cbf_ccc": 0.99825582358351,
+      "att_ccc": 0.991484963296674
+    }
   },
   "output_files": {
-    "results_csv": "D:\\ASL_WORKSPACE\\experiments\\training_size_learning_curve\\training_size_results.csv",
-    "comparison_csv": "D:\\ASL_WORKSPACE\\experiments\\training_size_learning_curve\\training_size_comparison.csv",
-    "comparison_plot": "D:\\ASL_WORKSPACE\\experiments\\training_size_learning_curve\\training_size_comparison.png",
-    "data_manifest": "D:\\ASL_WORKSPACE\\experiments\\training_size_learning_curve\\data_manifest.csv",
-    "subset_manifest": "D:\\ASL_WORKSPACE\\experiments\\training_size_learning_curve\\subset_manifest.csv"
+    "results_csv": "D:\\ASL_WORKSPACE\\experiments\\training_size_study\\training_size_results.csv",
+    "comparison_csv": "D:\\ASL_WORKSPACE\\experiments\\training_size_study\\training_size_comparison.csv",
+    "comparison_plot": "D:\\ASL_WORKSPACE\\experiments\\training_size_study\\training_size_comparison.png",
+    "verification_report": "D:\\ASL_WORKSPACE\\experiments\\training_size_study\\verification_report.md",
+    "report_2400_phantoms": "D:\\ASL_WORKSPACE\\experiments\\training_size_study\\report_2400_phantoms.md",
+    "final_interpretation": "D:\\ASL_WORKSPACE\\experiments\\training_size_study\\final_scientific_interpretation.md"
   },
   "system": {
-    "torch_version": "2.5.1+cu121",
+    "torch_version": "2.6.0+cu124",
     "cuda_available": true,
     "cuda_device": "NVIDIA GeForce GTX 1650"
   }
