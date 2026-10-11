@@ -55,45 +55,68 @@ $$X = M_c + M_l$$
   - SNR 10: Theoretical $\sqrt{2}\sigma = 47.26 \implies$ Empirical $\text{SD} = 46.41$
   - SNR 5: Theoretical $\sqrt{2}\sigma = 94.53 \implies$ Empirical $\text{SD} = 88.91$
 
+### 2.3 Evaluation Metrics and Mathematical Formulation
+For ground-truth values $y_i$ and model predictions $\hat{y}_i$ across $N$ valid brain voxels:
+
+1. **Root Mean Squared Error (RMSE):**
+   $$\text{RMSE} = \sqrt{\frac{1}{N}\sum_{i=1}^N (y_i - \hat{y}_i)^2}$$
+   - Units: CBF in $\text{mL}/100\text{ g}/\text{min}$, ATT in seconds ($\text{s}$).
+
+2. **Mean Absolute Error (MAE):**
+   $$\text{MAE} = \frac{1}{N}\sum_{i=1}^N |y_i - \hat{y}_i|$$
+   - Units: CBF in $\text{mL}/100\text{ g}/\text{min}$, ATT in seconds ($\text{s}$).
+
+3. **Lin's Concordance Correlation Coefficient (CCC):**
+   $$\text{CCC} = \frac{2 s_{y\hat{y}}}{s_y^2 + s_{\hat{y}}^2 + (\bar{y} - \bar{\hat{y}})^2}$$
+   where $\bar{y}$ and $\bar{\hat{y}}$ are the sample means, $s_y^2 = \frac{1}{N}\sum_{i=1}^N (y_i - \bar{y})^2$ and $s_{\hat{y}}^2 = \frac{1}{N}\sum_{i=1}^N (\hat{y}_i - \bar{\hat{y}})^2$ are the population variances ($\frac{1}{N}$ divisor / `ddof=0`), and $s_{y\hat{y}} = \frac{1}{N}\sum_{i=1}^N (y_i - \bar{y})(\hat{y}_i - \bar{\hat{y}})$ is the population covariance.
+   - Units: Dimensionless, bounded in $[-1, 1]$ where $+1$ signifies perfect agreement.
+
+4. **Mean Signed Bias:**
+   $$\text{Bias} = \frac{1}{N}\sum_{i=1}^N (\hat{y}_i - y_i)$$
+
+### 2.4 Evaluation Unit & Aggregation Protocol
+- **Primary Pooled Benchmark:** All primary metrics in `snr_wise_unet_results.csv` and `combined_snr10_snr15_comparison.csv` are calculated across all valid brain-parenchyma voxels pooled across the 100 canonical test phantoms ($N = 124,534$ total voxels with $\text{mask} > 0.5$).
+- **Per-Phantom Summary:** In addition, per-phantom metrics are independently calculated and reported in `snr_wise_unet_per_phantom.csv` ($100 \times 6 = 600$ phantom evaluations per model). Mean $\pm$ standard deviation across the 100 test phantoms is recorded in `snr_wise_unet_results.csv` under columns `CBF_RMSE_mean_phantom`, `CBF_RMSE_std_phantom`, `ATT_RMSE_mean_phantom`, and `ATT_RMSE_std_phantom`.
+
 ---
 
 ## 3. Required U-Net Results Across SNR
 
-### Table A: CBF Estimation Metrics Across SNR ($N=100$ Test Phantoms)
+### Table A: CBF Estimation Metrics Across SNR ($N=100$ Test Phantoms, 124,534 Valid Voxels)
 
-| Model | SNR | CBF RMSE (ml/100g/min) | CBF MAE (ml/100g/min) | CBF Bias (ml/100g/min) | CBF $R^2$ | Lin's CCC |
-|---|---:|---:|---:|---:|---:|---:|
-| **Original 4-PLD U-Net** | $\infty$ | **0.7420** | **0.4916** | -0.0638 | **0.9973** | **0.9986** |
-| Original 4-PLD U-Net | 50 | 0.7577 | 0.5057 | -0.0641 | 0.9972 | 0.9986 |
-| Original 4-PLD U-Net | 20 | 0.8399 | 0.5772 | -0.0630 | 0.9966 | 0.9983 |
-| Original 4-PLD U-Net | 15 | 0.9006 | 0.6342 | -0.0601 | 0.9961 | 0.9980 |
-| Original 4-PLD U-Net | 10 | 1.0836 | 0.7888 | -0.0543 | 0.9943 | 0.9971 |
-| Original 4-PLD U-Net | 5 | 1.9850 | 1.5549 | -0.0382 | 0.9809 | 0.9902 |
-| **Improved 4-PLD U-Net v2** | $\infty$ | **0.6654** | **0.4291** | -0.0540 | **0.9978** | **0.9989** |
-| Improved 4-PLD U-Net v2 | 50 | 0.7007 | 0.4636 | -0.0553 | 0.9976 | 0.9988 |
-| Improved 4-PLD U-Net v2 | 20 | 0.8672 | 0.6076 | -0.0560 | 0.9963 | 0.9981 |
-| Improved 4-PLD U-Net v2 | 15 | 0.9878 | 0.7072 | -0.0546 | 0.9953 | 0.9976 |
-| Improved 4-PLD U-Net v2 | 10 | 1.2551 | 0.9176 | -0.0519 | 0.9924 | 0.9961 |
-| Improved 4-PLD U-Net v2 | 5 | 2.1847 | 1.6276 | -0.0402 | 0.9769 | 0.9881 |
+| Model | SNR | CBF RMSE (mL/100 g/min) | CBF MAE (mL/100 g/min) | CBF Bias (mL/100 g/min) | CBF $R^2$ | Lin's CCC | Per-Phantom RMSE (Mean $\pm$ SD) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| **Original 4-PLD U-Net** | $\infty$ | **0.7420** | **0.4916** | +0.0826 | **0.9973** | **0.9986** | $0.7232 \pm 0.1720$ |
+| Original 4-PLD U-Net | 50 | 0.7577 | 0.5057 | +0.0823 | 0.9972 | 0.9986 | $0.7405 \pm 0.1663$ |
+| Original 4-PLD U-Net | 20 | 0.8399 | 0.5772 | +0.1043 | 0.9965 | 0.9983 | $0.8260 \pm 0.1600$ |
+| Original 4-PLD U-Net | 15 | 0.9006 | 0.6342 | +0.1277 | 0.9960 | 0.9980 | $0.8903 \pm 0.1454$ |
+| Original 4-PLD U-Net | 10 | 1.0836 | 0.7888 | +0.2196 | 0.9942 | 0.9971 | $1.0764 \pm 0.1371$ |
+| Original 4-PLD U-Net | 5 | 1.9850 | 1.5549 | +0.9541 | 0.9806 | 0.9902 | $1.9786 \pm 0.1810$ |
+| **Improved 4-PLD U-Net v2** | $\infty$ | **0.6654** | **0.4291** | -0.0158 | **0.9978** | **0.9989** | $0.6388 \pm 0.1904$ |
+| Improved 4-PLD U-Net v2 | 50 | 0.7007 | 0.4636 | -0.0338 | 0.9976 | 0.9988 | $0.6767 \pm 0.1867$ |
+| Improved 4-PLD U-Net v2 | 20 | 0.8672 | 0.6076 | -0.0566 | 0.9963 | 0.9981 | $0.8506 \pm 0.1772$ |
+| Improved 4-PLD U-Net v2 | 15 | 0.9878 | 0.7072 | -0.0789 | 0.9952 | 0.9976 | $0.9765 \pm 0.1628$ |
+| Improved 4-PLD U-Net v2 | 10 | 1.2551 | 0.9176 | -0.1040 | 0.9922 | 0.9961 | $1.2481 \pm 0.1509$ |
+| Improved 4-PLD U-Net v2 | 5 | 2.1847 | 1.6276 | +0.2030 | 0.9765 | 0.9881 | $2.1825 \pm 0.1414$ |
 
 ---
 
-### Table B: ATT Estimation Metrics Across SNR ($N=100$ Test Phantoms)
+### Table B: ATT Estimation Metrics Across SNR ($N=100$ Test Phantoms, 124,534 Valid Voxels)
 
-| Model | SNR | ATT RMSE (s) | ATT MAE (s) | ATT Bias (s) | ATT $R^2$ | Lin's CCC |
-|---|---:|---:|---:|---:|---:|---:|
-| **Original 4-PLD U-Net** | $\infty$ | **0.0491** | **0.0296** | +0.0034 | **0.9842** | **0.9920** |
-| Original 4-PLD U-Net | 50 | 0.0495 | 0.0303 | +0.0035 | 0.9839 | 0.9919 |
-| Original 4-PLD U-Net | 20 | 0.0521 | 0.0333 | +0.0036 | 0.9822 | 0.9910 |
-| Original 4-PLD U-Net | 15 | 0.0527 | 0.0347 | +0.0036 | 0.9818 | 0.9909 |
-| Original 4-PLD U-Net | 10 | 0.0598 | 0.0408 | +0.0038 | 0.9766 | 0.9882 |
-| Original 4-PLD U-Net | 5 | 0.0866 | 0.0647 | +0.0050 | 0.9509 | 0.9757 |
-| **Improved 4-PLD U-Net v2** | $\infty$ | **0.0508** | **0.0295** | +0.0054 | **0.9831** | **0.9913** |
-| Improved 4-PLD U-Net v2 | 50 | 0.0513 | 0.0304 | +0.0054 | 0.9827 | 0.9911 |
-| Improved 4-PLD U-Net v2 | 20 | 0.0548 | 0.0346 | +0.0056 | 0.9803 | 0.9899 |
-| Improved 4-PLD U-Net v2 | 15 | 0.0574 | 0.0374 | +0.0057 | 0.9784 | 0.9889 |
-| Improved 4-PLD U-Net v2 | 10 | 0.0628 | 0.0429 | +0.0059 | 0.9742 | 0.9866 |
-| Improved 4-PLD U-Net v2 | 5 | 0.0857 | 0.0625 | +0.0068 | 0.9520 | 0.9749 |
+| Model | SNR | ATT RMSE (s) | ATT MAE (s) | ATT Bias (s) | ATT $R^2$ | Lin's CCC | Per-Phantom RMSE (Mean $\pm$ SD) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| **Original 4-PLD U-Net** | $\infty$ | **0.0491** | **0.0296** | +0.0012 | **0.9841** | **0.9920** | $0.0451 \pm 0.0194$ |
+| Original 4-PLD U-Net | 50 | 0.0495 | 0.0303 | +0.0013 | 0.9838 | 0.9919 | $0.0457 \pm 0.0191$ |
+| Original 4-PLD U-Net | 20 | 0.0521 | 0.0333 | +0.0016 | 0.9821 | 0.9910 | $0.0486 \pm 0.0188$ |
+| Original 4-PLD U-Net | 15 | 0.0527 | 0.0347 | +0.0035 | 0.9817 | 0.9909 | $0.0493 \pm 0.0183$ |
+| Original 4-PLD U-Net | 10 | 0.0598 | 0.0408 | +0.0073 | 0.9764 | 0.9882 | $0.0565 \pm 0.0197$ |
+| Original 4-PLD U-Net | 5 | 0.0866 | 0.0647 | +0.0348 | 0.9504 | 0.9757 | $0.0837 \pm 0.0221$ |
+| **Improved 4-PLD U-Net v2** | $\infty$ | **0.0508** | **0.0295** | +0.0070 | **0.9830** | **0.9913** | $0.0468 \pm 0.0198$ |
+| Improved 4-PLD U-Net v2 | 50 | 0.0513 | 0.0304 | +0.0064 | 0.9826 | 0.9911 | $0.0474 \pm 0.0197$ |
+| Improved 4-PLD U-Net v2 | 20 | 0.0548 | 0.0346 | +0.0060 | 0.9802 | 0.9899 | $0.0511 \pm 0.0198$ |
+| Improved 4-PLD U-Net v2 | 15 | 0.0574 | 0.0374 | +0.0068 | 0.9783 | 0.9889 | $0.0539 \pm 0.0197$ |
+| Improved 4-PLD U-Net v2 | 10 | 0.0628 | 0.0429 | +0.0073 | 0.9740 | 0.9866 | $0.0597 \pm 0.0197$ |
+| Improved 4-PLD U-Net v2 | 5 | 0.0857 | 0.0625 | +0.0260 | 0.9515 | 0.9749 | $0.0833 \pm 0.0207$ |
 
 ---
 

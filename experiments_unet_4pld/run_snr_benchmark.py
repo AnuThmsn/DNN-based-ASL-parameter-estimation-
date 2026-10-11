@@ -51,15 +51,31 @@ def sha256_file(filepath):
     return h.hexdigest()
 
 def calc_lin_ccc(true, pred):
+    """
+    Computes Lin's Concordance Correlation Coefficient (CCC) using exact population moments:
+    CCC = (2 * Cov(y, y_hat)) / (Var(y) + Var(y_hat) + (mu_y - mu_y_hat)^2)
+    where Var and Cov use population moments (ddof=0 / 1/N divisor).
+    """
     true = np.asarray(true, dtype=np.float64)
     pred = np.asarray(pred, dtype=np.float64)
+    if not np.all(np.isfinite(true)) or not np.all(np.isfinite(pred)):
+        raise ValueError("Input arrays must contain finite values only (found NaN or Inf).")
+
+    if len(true) == 0:
+        return 0.0
+
     mu_x = np.mean(true)
     mu_y = np.mean(pred)
     var_x = np.var(true)
     var_y = np.var(pred)
     cov_xy = np.mean((true - mu_x) * (pred - mu_y))
     denom = var_x + var_y + (mu_x - mu_y) ** 2
-    return float((2.0 * cov_xy) / (denom + 1e-12)) if denom > 0 else 0.0
+
+    if denom <= 1e-15:
+        # Constant arrays: if identical, agreement is perfect 1.0, otherwise 0.0
+        return 1.0 if np.allclose(true, pred) else 0.0
+
+    return float((2.0 * cov_xy) / denom)
 
 def generate_snr_dataset(Y_gt, masks, snr, seed=7000):
     """
@@ -302,6 +318,17 @@ def run_snr_benchmark():
             ccc_a_all = calc_lin_ccc(gt_a_all, pr_a_all)
 
             summary_row = {
+                "model": m_name,
+                "snr": snr_label,
+                "seed": 7000 if snr != float("inf") else 0,
+                "n_phantoms": N_phantoms,
+                "n_valid_elements": int(np.sum(vm_all)),
+                "cbf_rmse": met_c_all["RMSE"],
+                "cbf_mae": met_c_all["MAE"],
+                "cbf_ccc": ccc_c_all,
+                "att_rmse": met_a_all["RMSE"],
+                "att_mae": met_a_all["MAE"],
+                "att_ccc": ccc_a_all,
                 "Model": m_name,
                 "Architecture": arch_ver,
                 "SNR": snr_label,
@@ -442,23 +469,28 @@ def generate_publication_figures(df_summary, df_hist, df_phantom, saved_preds, Y
     df_v2 = df_v2.sort_values("x")
 
     # 1. Fig 1 & 2 & 5: CBF & ATT RMSE vs SNR Comparison
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5.5))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
     ax1.plot(df_orig["x"], df_orig["CBF_RMSE"], "o-", color="#D9534F", linewidth=2.5, markersize=8, label="Original 4-PLD U-Net")
     ax1.plot(df_v2["x"], df_v2["CBF_RMSE"], "D-", color="#2E7D32", linewidth=2.5, markersize=8, label="Improved 4-PLD U-Net v2")
+    # Standalone historical reference points at SNR 10 & 15 (no interpolated lines)
+    ax1.scatter([10, 15], [5.0300, 3.7590], color="#E65100", s=110, marker="*", label="Bayesian Ref (PDF)", zorder=5)
+    ax1.scatter([10, 15], [2.9820, 2.0620], color="#6A1B9A", s=80, marker="^", label="NLS Ref (PDF)", zorder=5)
     ax1.set_xticks(snr_x)
     ax1.set_xticklabels(snr_tick_labels)
     ax1.set_xlabel("Signal-to-Noise Ratio (SNR)")
-    ax1.set_ylabel("CBF RMSE (ml/100g/min)")
+    ax1.set_ylabel("CBF RMSE (mL/100 g/min)")
     ax1.set_title("CBF RMSE vs SNR")
     ax1.grid(True, alpha=0.3)
     ax1.legend(frameon=True)
 
     ax2.plot(df_orig["x"], df_orig["ATT_RMSE"], "o-", color="#D9534F", linewidth=2.5, markersize=8, label="Original 4-PLD U-Net")
     ax2.plot(df_v2["x"], df_v2["ATT_RMSE"], "D-", color="#2E7D32", linewidth=2.5, markersize=8, label="Improved 4-PLD U-Net v2")
+    ax2.scatter([10, 15], [0.0826, 0.0584], color="#E65100", s=110, marker="*", label="Bayesian Ref (PDF)", zorder=5)
+    ax2.scatter([10, 15], [0.5062, 0.4951], color="#6A1B9A", s=80, marker="^", label="NLS Ref (PDF)", zorder=5)
     ax2.set_xticks(snr_x)
     ax2.set_xticklabels(snr_tick_labels)
     ax2.set_xlabel("Signal-to-Noise Ratio (SNR)")
-    ax2.set_ylabel("ATT RMSE (s)")
+    ax2.set_ylabel("ATT RMSE (seconds)")
     ax2.set_title("ATT RMSE vs SNR")
     ax2.grid(True, alpha=0.3)
     ax2.legend(frameon=True)
@@ -470,23 +502,27 @@ def generate_publication_figures(df_summary, df_hist, df_phantom, saved_preds, Y
     print(f"Saved: {p1}")
 
     # 2. Fig 3 & 4: MAE vs SNR
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5.5))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
     ax1.plot(df_orig["x"], df_orig["CBF_MAE"], "o--", color="#D9534F", linewidth=2.5, markersize=8, label="Original 4-PLD U-Net")
     ax1.plot(df_v2["x"], df_v2["CBF_MAE"], "D--", color="#2E7D32", linewidth=2.5, markersize=8, label="Improved 4-PLD U-Net v2")
+    ax1.scatter([10, 15], [3.9680, 2.8490], color="#E65100", s=110, marker="*", label="Bayesian Ref (PDF)", zorder=5)
+    ax1.scatter([10, 15], [2.0480, 1.4140], color="#6A1B9A", s=80, marker="^", label="NLS Ref (PDF)", zorder=5)
     ax1.set_xticks(snr_x)
     ax1.set_xticklabels(snr_tick_labels)
     ax1.set_xlabel("Signal-to-Noise Ratio (SNR)")
-    ax1.set_ylabel("CBF MAE (ml/100g/min)")
+    ax1.set_ylabel("CBF MAE (mL/100 g/min)")
     ax1.set_title("CBF MAE vs SNR")
     ax1.grid(True, alpha=0.3)
     ax1.legend(frameon=True)
 
     ax2.plot(df_orig["x"], df_orig["ATT_MAE"], "o--", color="#D9534F", linewidth=2.5, markersize=8, label="Original 4-PLD U-Net")
     ax2.plot(df_v2["x"], df_v2["ATT_MAE"], "D--", color="#2E7D32", linewidth=2.5, markersize=8, label="Improved 4-PLD U-Net v2")
+    ax2.scatter([10, 15], [0.0683, 0.0472], color="#E65100", s=110, marker="*", label="Bayesian Ref (PDF)", zorder=5)
+    ax2.scatter([10, 15], [0.3411, 0.3259], color="#6A1B9A", s=80, marker="^", label="NLS Ref (PDF)", zorder=5)
     ax2.set_xticks(snr_x)
     ax2.set_xticklabels(snr_tick_labels)
     ax2.set_xlabel("Signal-to-Noise Ratio (SNR)")
-    ax2.set_ylabel("ATT MAE (s)")
+    ax2.set_ylabel("ATT MAE (seconds)")
     ax2.set_title("ATT MAE vs SNR")
     ax2.grid(True, alpha=0.3)
     ax2.legend(frameon=True)
@@ -498,14 +534,14 @@ def generate_publication_figures(df_summary, df_hist, df_phantom, saved_preds, Y
     print(f"Saved: {p2}")
 
     # 3. Fig 6: Mean Signed Bias vs SNR
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5.5))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
     ax1.plot(df_orig["x"], df_orig["CBF_Bias"], "o-", color="#D9534F", linewidth=2.5, markersize=8, label="Original 4-PLD U-Net")
     ax1.plot(df_v2["x"], df_v2["CBF_Bias"], "D-", color="#2E7D32", linewidth=2.5, markersize=8, label="Improved 4-PLD U-Net v2")
     ax1.axhline(0, color="gray", linestyle=":", linewidth=1.5)
     ax1.set_xticks(snr_x)
     ax1.set_xticklabels(snr_tick_labels)
     ax1.set_xlabel("Signal-to-Noise Ratio (SNR)")
-    ax1.set_ylabel("CBF Mean Signed Bias (ml/100g/min)")
+    ax1.set_ylabel("CBF Mean Signed Bias (mL/100 g/min)")
     ax1.set_title("CBF Bias vs SNR")
     ax1.grid(True, alpha=0.3)
     ax1.legend(frameon=True)
@@ -516,7 +552,7 @@ def generate_publication_figures(df_summary, df_hist, df_phantom, saved_preds, Y
     ax2.set_xticks(snr_x)
     ax2.set_xticklabels(snr_tick_labels)
     ax2.set_xlabel("Signal-to-Noise Ratio (SNR)")
-    ax2.set_ylabel("ATT Mean Signed Bias (s)")
+    ax2.set_ylabel("ATT Mean Signed Bias (seconds)")
     ax2.set_title("ATT Bias vs SNR")
     ax2.grid(True, alpha=0.3)
     ax2.legend(frameon=True)
@@ -528,26 +564,30 @@ def generate_publication_figures(df_summary, df_hist, df_phantom, saved_preds, Y
     print(f"Saved: {p3}")
 
     # 4. Fig 7: Lin's Concordance Correlation Coefficient (CCC) vs SNR
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5.5))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
     ax1.plot(df_orig["x"], df_orig["CBF_CCC"], "o-", color="#D9534F", linewidth=2.5, markersize=8, label="Original 4-PLD U-Net")
     ax1.plot(df_v2["x"], df_v2["CBF_CCC"], "D-", color="#2E7D32", linewidth=2.5, markersize=8, label="Improved 4-PLD U-Net v2")
+    ax1.scatter([10, 15], [0.9606, 0.9671], color="#E65100", s=110, marker="*", label="Bayesian Ref (PDF)", zorder=5)
+    ax1.scatter([10, 15], [0.9913, 0.9958], color="#6A1B9A", s=80, marker="^", label="NLS Ref (PDF)", zorder=5)
     ax1.set_xticks(snr_x)
     ax1.set_xticklabels(snr_tick_labels)
     ax1.set_xlabel("Signal-to-Noise Ratio (SNR)")
-    ax1.set_ylabel("CBF CCC")
-    ax1.set_ylim(0.90, 1.005)
-    ax1.set_title("CBF Lin's CCC vs SNR")
+    ax1.set_ylabel("CBF Lin's CCC (dimensionless)")
+    ax1.set_ylim(0.92, 1.005)
+    ax1.set_title("CBF Lin's Concordance Correlation Coefficient (CCC)")
     ax1.grid(True, alpha=0.3)
     ax1.legend(frameon=True)
 
     ax2.plot(df_orig["x"], df_orig["ATT_CCC"], "o-", color="#D9534F", linewidth=2.5, markersize=8, label="Original 4-PLD U-Net")
     ax2.plot(df_v2["x"], df_v2["ATT_CCC"], "D-", color="#2E7D32", linewidth=2.5, markersize=8, label="Improved 4-PLD U-Net v2")
+    ax2.scatter([10, 15], [0.9914, 0.9944], color="#E65100", s=110, marker="*", label="Bayesian Ref (PDF)", zorder=5)
+    ax2.scatter([10, 15], [0.6770, 0.6899], color="#6A1B9A", s=80, marker="^", label="NLS Ref (PDF)", zorder=5)
     ax2.set_xticks(snr_x)
     ax2.set_xticklabels(snr_tick_labels)
     ax2.set_xlabel("Signal-to-Noise Ratio (SNR)")
-    ax2.set_ylabel("ATT CCC")
-    ax2.set_ylim(0.90, 1.005)
-    ax2.set_title("ATT Lin's CCC vs SNR")
+    ax2.set_ylabel("ATT Lin's CCC (dimensionless)")
+    ax2.set_ylim(0.60, 1.005)
+    ax2.set_title("ATT Lin's Concordance Correlation Coefficient (CCC)")
     ax2.grid(True, alpha=0.3)
     ax2.legend(frameon=True)
 
