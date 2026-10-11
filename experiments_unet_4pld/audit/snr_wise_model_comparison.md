@@ -168,3 +168,4 @@ Saved in high resolution (300 DPI) under `D:\ASL_WORKSPACE\experiments\snr_bench
 - **Baseline Checkpoint Immutability:**
   - Original 4-PLD U-Net: `9115cde90f0306a02b1fb531006062fa3feaa5be6c048194e16d69d0ed151b49` (Verified unchanged).
   - Improved U-Net v2: `deaf48857f729ab4b9760328fa35a838be438f4ff6feb0d828876ec18ab6d687` (Verified unchanged).
+
