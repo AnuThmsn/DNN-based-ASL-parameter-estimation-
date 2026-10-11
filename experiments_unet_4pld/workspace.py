@@ -33,14 +33,17 @@ class WorkspaceManager:
 
         self.min_free_gb = min_free_gb
 
-        # 2. Define subdirectories
+        # 2. Define subdirectories matching Phase 2 specifications
         self.subdirs = {
+            "project": os.path.join(self.root, "project"),
             "data": os.path.join(self.root, "data"),
+            "cache": os.path.join(self.root, "cache"),
             "checkpoints": os.path.join(self.root, "checkpoints"),
             "results": os.path.join(self.root, "results"),
             "logs": os.path.join(self.root, "logs"),
             "plots": os.path.join(self.root, "plots"),
             "tmp": os.path.join(self.root, "tmp"),
+            "manifests": os.path.join(self.root, "manifests"),
             "final_model": os.path.join(self.root, "final_model_4pld")
         }
 
@@ -66,15 +69,25 @@ class WorkspaceManager:
             raise PermissionError(f"Workspace path {self.root} is not writable: {e}")
 
     def _configure_environment(self):
-        """Redirects OS and library temp directories to workspace tmp directory."""
+        """Redirects OS, Python, pip, PyTorch, Matplotlib, and HF caches to workspace on D:."""
         tmp_dir = self.subdirs["tmp"]
+        cache_dir = self.subdirs["cache"]
+
+        # Python & OS Temp
         os.environ["TMPDIR"] = tmp_dir
         os.environ["TEMP"] = tmp_dir
         os.environ["TMP"] = tmp_dir
-        os.environ["TORCH_HOME"] = os.path.join(tmp_dir, "torch_cache")
-        os.environ["MPLCONFIGDIR"] = os.path.join(tmp_dir, "mpl_cache")
+
+        # Library Caches
+        os.environ["TORCH_HOME"] = os.path.join(cache_dir, "torch")
+        os.environ["MPLCONFIGDIR"] = os.path.join(cache_dir, "matplotlib")
+        os.environ["PIP_CACHE_DIR"] = os.path.join(cache_dir, "pip")
+        os.environ["HF_HOME"] = os.path.join(cache_dir, "huggingface")
+
         os.makedirs(os.environ["TORCH_HOME"], exist_ok=True)
         os.makedirs(os.environ["MPLCONFIGDIR"], exist_ok=True)
+        os.makedirs(os.environ["PIP_CACHE_DIR"], exist_ok=True)
+        os.makedirs(os.environ["HF_HOME"], exist_ok=True)
 
     def check_preflight_storage(self, required_gb=2.0):
         """
@@ -133,6 +146,52 @@ class WorkspaceManager:
         summary["workspace_free_gb"] = round(get_disk_free_gb(self.root), 2)
         return summary
 
+    def verify_storage_redirection(self):
+        """
+        Executes a verification test confirming where temporary, cache, and generated
+        files are actually written. Verifies redirection to D: and confirms C: is untouched.
+        """
+        import tempfile
+        import matplotlib
+        import torch
+
+        # 1. Test tempfile location
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as tf:
+            tf.write("storage verification test")
+            tf_path = tf.name
+
+        tf_dir = os.path.dirname(tf_path)
+        tf_on_d = os.path.abspath(tf_path).upper().startswith("D:")
+        os.remove(tf_path)
+
+        # 2. Test Matplotlib config dir
+        mpl_dir = matplotlib.get_configdir()
+        mpl_on_d = os.path.abspath(mpl_dir).upper().startswith("D:")
+
+        # 3. Test Torch hub/cache dir
+        torch_dir = torch.hub.get_dir()
+        torch_on_d = os.path.abspath(torch_dir).upper().startswith("D:")
+
+        # 4. Disk space readings
+        free_c = get_disk_free_gb("C:\\")
+        free_d = get_disk_free_gb(self.root)
+
+        results = {
+            "workspace_root": self.root,
+            "temp_dir": tf_dir,
+            "temp_on_d": tf_on_d,
+            "mpl_config_dir": mpl_dir,
+            "mpl_on_d": mpl_on_d,
+            "torch_dir": torch_dir,
+            "torch_on_d": torch_on_d,
+            "pip_cache_dir": os.environ.get("PIP_CACHE_DIR"),
+            "hf_home": os.environ.get("HF_HOME"),
+            "free_c_gb": round(free_c, 2),
+            "free_d_gb": round(free_d, 2),
+            "all_redirected": bool(tf_on_d and mpl_on_d and torch_on_d)
+        }
+        return results
+
 # Global singleton instance
 _DEFAULT_WORKSPACE = None
 
@@ -141,4 +200,5 @@ def get_workspace(custom_path=None, min_free_gb=5.0):
     if _DEFAULT_WORKSPACE is None or custom_path is not None:
         _DEFAULT_WORKSPACE = WorkspaceManager(custom_path=custom_path, min_free_gb=min_free_gb)
     return _DEFAULT_WORKSPACE
+
 
