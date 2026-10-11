@@ -218,3 +218,4 @@ python experiments_unet_4pld/audit/verify_all_benchmarks_and_reproduce.py
 # 4. Test Standalone Model Inference on Real Synthetic Phantoms
 python -c "import sys; sys.path.insert(0, 'D:/ASL_WORKSPACE/final_model_4pld'); from inference import ASLParameterEstimator; import numpy as np; d = np.load('D:/ASL_WORKSPACE/data/test_N100_s7.npz'); est = ASLParameterEstimator(); c, a = est.predict(d['X'][:5], brain_mask=d['masks'][:5]); print('Real Inference Test: SUCCESS')"
 ```
+
