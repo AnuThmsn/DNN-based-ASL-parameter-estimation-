@@ -1,0 +1,35 @@
+{
+  "experiment_name": "training_size_learning_curve",
+  "date_executed": "2026-10-12 02:24:41",
+  "sizes_completed": [
+    100,
+    200,
+    400,
+    600,
+    1200,
+    2400
+  ],
+  "seeds_completed": [
+    42,
+    123,
+    2024
+  ],
+  "total_runs_completed": 18,
+  "cohort_hashes": {
+    "validation_N100_s99": "f9fca0308c6b216cd0ff1bcb1da91b917a1fb2020bc40e27496a33cef3111301",
+    "test_N100_s7": "c853337a83a7a289790a5e1ae826c4990037bfae44ececa1b181f3192ad6893f",
+    "training_nested_pool_N2400": "cfea08099e523d325ce04a3464932e186e767368e78d64794a297859fa51fd96"
+  },
+  "output_files": {
+    "results_csv": "D:\\ASL_WORKSPACE\\experiments\\training_size_learning_curve\\training_size_results.csv",
+    "comparison_csv": "D:\\ASL_WORKSPACE\\experiments\\training_size_learning_curve\\training_size_comparison.csv",
+    "comparison_plot": "D:\\ASL_WORKSPACE\\experiments\\training_size_learning_curve\\training_size_comparison.png",
+    "data_manifest": "D:\\ASL_WORKSPACE\\experiments\\training_size_learning_curve\\data_manifest.csv",
+    "subset_manifest": "D:\\ASL_WORKSPACE\\experiments\\training_size_learning_curve\\subset_manifest.csv"
+  },
+  "system": {
+    "torch_version": "2.5.1+cu121",
+    "cuda_available": true,
+    "cuda_device": "NVIDIA GeForce GTX 1650"
+  }
+}
