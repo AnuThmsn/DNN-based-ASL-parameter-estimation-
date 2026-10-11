@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import scipy.optimize
 import scipy.ndimage as ndi
+import scipy.stats as stats_scipy
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
@@ -18,7 +19,7 @@ if parent_dir not in sys.path:
 from data_gen import (
     compute_signals_vec,
     PLDs, SCALE, CBF_MIN, CBF_MAX, ATT_MIN, ATT_MAX,
-    SIG_REF_SC
+    SIG_REF_SC, tau
 )
 from experiments_unet_4pld.model import ASLUNet
 from experiments_unet_4pld.dataset import denormalize_predictions
@@ -69,7 +70,7 @@ def calc_masked_psnr(true_2d, pred_2d, mask_2d, data_range=100.0):
         return 100.0
     return float(10.0 * np.log10((data_range ** 2) / mse))
 
-def calc_masked_ssim(true_2d, pred_2d, mask_2d, data_range=100.0, win_size=7):
+def calc_masked_ssim(true_2d, pred_2d, mask_2d, data_range=100.0):
     """
     Computes masked SSIM using local Gaussian windowing strictly
     within valid brain regions.
@@ -78,7 +79,6 @@ def calc_masked_ssim(true_2d, pred_2d, mask_2d, data_range=100.0, win_size=7):
     p = np.copy(pred_2d).astype(np.float64)
     m = (mask_2d > 0.5).astype(np.float64)
 
-    # Zero background
     t[m == 0] = 0.0
     p[m == 0] = 0.0
 
@@ -100,7 +100,6 @@ def calc_masked_ssim(true_2d, pred_2d, mask_2d, data_range=100.0, win_size=7):
     ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / \
                ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2) + 1e-12)
 
-    # Valid mask for SSIM
     valid_window = ndi.gaussian_filter(m, sigma) > 0.5
     if np.any(valid_window):
         return float(np.mean(ssim_map[valid_window]))
@@ -124,17 +123,14 @@ def evaluate_unet(model, X_test_norm, stats, device):
     preds_norm = np.concatenate(preds_list, axis=0) # [N, 2, H, W]
     cbf_pred, att_pred = denormalize_predictions(preds_norm, stats)
     
-    # Clip to physical bounds
+    # Clip to physiological bounds
     cbf_pred = np.clip(cbf_pred, CBF_MIN, CBF_MAX)
     att_pred = np.clip(att_pred, ATT_MIN, ATT_MAX)
     duration = time.time() - start_time
     return cbf_pred, att_pred, duration
 
-def build_pointwise_dnn(device):
-    """
-    Constructs a point-wise MLP baseline matching the repository's
-    established 9-layer MLP architectures.
-    """
+def build_pointwise_dnn(in_channels=4, device=None):
+    """Constructs a point-wise MLP matching established 5-layer MLP architectures."""
     class MLP(nn.Module):
         def __init__(self, in_dim=4, hidden=64, n_layers=5, out_dim=1):
             super().__init__()
@@ -146,17 +142,17 @@ def build_pointwise_dnn(device):
         def forward(self, x):
             return self.net(x)
 
-    cbf_mlp = MLP(4, 64, 5, 1).to(device)
-    att_mlp = MLP(4, 64, 5, 1).to(device)
+    cbf_mlp = MLP(in_channels, 64, 5, 1).to(device)
+    att_mlp = MLP(in_channels, 64, 5, 1).to(device)
     return cbf_mlp, att_mlp
 
 def train_pointwise_dnn(X_tr_vox, Y_tr_vox, stats, device, epochs=30, batch_size=4096):
     """Trains a point-wise MLP baseline on flattened training voxels."""
-    cbf_mlp, att_mlp = build_pointwise_dnn(device)
+    in_channels = X_tr_vox.shape[1]
+    cbf_mlp, att_mlp = build_pointwise_dnn(in_channels=in_channels, device=device)
     
-    # Standardize voxels
-    X_mean = stats["X_mean"]
-    X_std = stats["X_std"]
+    X_mean = stats["X_mean"][:in_channels]
+    X_std = stats["X_std"][:in_channels]
     X_tr_std = (X_tr_vox - X_mean) / X_std
     Y_cbf_std = (Y_tr_vox[:, 0] - stats["cbf_mean"]) / stats["cbf_std"]
     Y_att_std = (Y_tr_vox[:, 1] - stats["att_mean"]) / stats["att_std"]
@@ -200,15 +196,15 @@ def evaluate_pointwise_dnn(cbf_mlp, att_mlp, X_test, masks_test, stats, device):
     cbf_out = np.zeros((N, H, W), dtype=np.float32)
     att_out = np.zeros((N, H, W), dtype=np.float32)
 
-    X_mean = stats["X_mean"]
-    X_std = stats["X_std"]
+    X_mean = stats["X_mean"][:C]
+    X_std = stats["X_std"][:C]
 
     with torch.no_grad():
         for i in range(N):
             valid = masks_test[i, 0] > 0.5
             if not np.any(valid):
                 continue
-            vox = X_test[i][:, valid].T # [N_valid, 4]
+            vox = X_test[i][:, valid].T # [N_valid, C]
             vox_norm = (vox - X_mean) / X_std
             vox_t = torch.tensor(vox_norm, dtype=torch.float32, device=device)
 
@@ -224,51 +220,76 @@ def evaluate_pointwise_dnn(cbf_mlp, att_mlp, X_test, masks_test, stats, device):
     duration = time.time() - start_time
     return cbf_out, att_out, duration
 
-def evaluate_bayesian_fast(X_test, snrs_test, masks_test, sig_ref_sc=SIG_REF_SC, grid_res=60):
+def evaluate_bayesian_calibrated(
+    X_test,
+    snrs_test,
+    masks_test,
+    device=None,
+    sig_ref_sc=SIG_REF_SC,
+    grid_res=100,
+    batch_size=8192
+):
     """
-    Vectorized Bayesian grid estimator across valid voxels of test phantoms.
-    Uses uniform prior on [CBF_MIN, CBF_MAX] x [ATT_MIN, ATT_MAX].
+    GPU-accelerated Bayesian grid estimator on 100x100 parameter grid.
+    Likelihood is calibrated to effective noise variance of sum-of-Ricians:
+    sigma_eff = sqrt(2) * sig_ref_sc / SNR.
     """
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     start_time = time.time()
     N, C, H, W = X_test.shape
     cbf_out = np.zeros((N, H, W), dtype=np.float32)
     att_out = np.zeros((N, H, W), dtype=np.float32)
 
-    # Precompute grid
-    cbf_grid = np.linspace(CBF_MIN, CBF_MAX, grid_res)
-    att_grid = np.linspace(ATT_MIN, ATT_MAX, grid_res)
+    # 100x100 dense grid
+    cbf_grid = np.linspace(CBF_MIN, CBF_MAX, grid_res, dtype=np.float32)
+    att_grid = np.linspace(ATT_MIN, ATT_MAX, grid_res, dtype=np.float32)
     CC, AA = np.meshgrid(cbf_grid, att_grid)
-    grid_cbf = CC.flatten()
-    grid_att = AA.flatten()
-    grid_sig = 2.0 * compute_signals_vec(grid_cbf, grid_att) * SCALE # [G, 4]
-    norm_S = np.sum(grid_sig ** 2, axis=1, keepdims=True).T    # [1, G]
+    grid_cbf_t = torch.tensor(CC.flatten(), dtype=torch.float32, device=device)
+    grid_att_t = torch.tensor(AA.flatten(), dtype=torch.float32, device=device)
 
-    for i in range(N):
-        valid = masks_test[i, 0] > 0.5
-        if not np.any(valid):
-            continue
-        X_vox = X_test[i][:, valid].T # [V, 4]
-        snr = float(snrs_test[i])
-        sigma = sig_ref_sc / snr if snr < 1e5 else 1e-6
-        sigma = max(sigma, 1e-6)
+    # Expected signal matching Simulator A observation: 2.0 * compute_signals_vec * SCALE
+    grid_sig_np = 2.0 * compute_signals_vec(CC.flatten(), AA.flatten(), ld=tau) * SCALE
+    grid_sig_t = torch.tensor(grid_sig_np, dtype=torch.float32, device=device) # [G, 4]
+    norm_S = torch.sum(grid_sig_t ** 2, dim=1, keepdim=True).T # [1, G]
 
-        norm_X = np.sum(X_vox ** 2, axis=1, keepdims=True)
-        sq_diff = norm_X - 2.0 * (X_vox @ grid_sig.T) + norm_S
-        log_L = -0.5 * sq_diff / (sigma ** 2)
-        log_L -= np.max(log_L, axis=1, keepdims=True)
-        L = np.exp(log_L)
-        P = L / (np.sum(L, axis=1, keepdims=True) + 1e-12)
+    with torch.no_grad():
+        for i in range(N):
+            valid = masks_test[i, 0] > 0.5
+            if not np.any(valid):
+                continue
+            X_vox = X_test[i][:, valid].T # [V, 4]
+            V = len(X_vox)
+            snr = float(snrs_test[i])
+            # Calibrated effective standard deviation for sum of two Ricians:
+            sigma_eff = (np.sqrt(2.0) * sig_ref_sc / snr) if (snr < 1e5 and snr > 0) else 1e-4
 
-        pred_cbf = P @ grid_cbf
-        pred_att = P @ grid_att
+            cbf_preds_i = []
+            att_preds_i = []
 
-        cbf_out[i][valid] = np.clip(pred_cbf, CBF_MIN, CBF_MAX)
-        att_out[i][valid] = np.clip(pred_att, ATT_MIN, ATT_MAX)
+            for v_start in range(0, V, batch_size):
+                v_end = min(v_start + batch_size, V)
+                xb = torch.tensor(X_vox[v_start:v_end], dtype=torch.float32, device=device)
+                norm_X = torch.sum(xb ** 2, dim=1, keepdim=True)
+                sq_diff = norm_X - 2.0 * torch.matmul(xb, grid_sig_t.T) + norm_S
+                log_L = -0.5 * sq_diff / (sigma_eff ** 2)
+                log_L -= torch.max(log_L, dim=1, keepdim=True)[0]
+                L = torch.exp(log_L)
+                P = L / (torch.sum(L, dim=1, keepdim=True) + 1e-12)
+
+                cb_p = torch.matmul(P, grid_cbf_t).cpu().numpy()
+                at_p = torch.matmul(P, grid_att_t).cpu().numpy()
+                cbf_preds_i.append(cb_p)
+                att_preds_i.append(at_p)
+
+            cbf_out[i][valid] = np.clip(np.concatenate(cbf_preds_i), CBF_MIN, CBF_MAX)
+            att_out[i][valid] = np.clip(np.concatenate(att_preds_i), ATT_MIN, ATT_MAX)
 
     duration = time.time() - start_time
     return cbf_out, att_out, duration
 
-def evaluate_nlls(X_test, masks_test, max_phantoms=15):
+def evaluate_nlls(X_test, masks_test, max_phantoms=25):
     """
     Voxel-wise Non-Linear Least Squares (NLLS) estimator using TRF bounded solver.
     Evaluates on up to max_phantoms to maintain computationally reasonable runtime.
@@ -281,7 +302,7 @@ def evaluate_nlls(X_test, masks_test, max_phantoms=15):
 
     def residual_fn(params, y_obs):
         c, a = params
-        s = 2.0 * compute_signals_vec(np.array([c]), np.array([a])) * SCALE
+        s = 2.0 * compute_signals_vec(np.array([c]), np.array([a]), ld=tau) * SCALE
         return (s[0] - y_obs)
 
     x0 = [50.0, 1.75]
@@ -300,7 +321,7 @@ def evaluate_nlls(X_test, masks_test, max_phantoms=15):
         for v in range(n_vox):
             res = scipy.optimize.least_squares(
                 residual_fn, x0=x0, args=(vox_signals[v],),
-                bounds=bounds, method="trf", ftol=1e-3, xtol=1e-3
+                bounds=bounds, method="trf", ftol=1e-2, xtol=1e-2
             )
             cbf_vox[v] = res.x[0]
             att_vox[v] = res.x[1]
@@ -323,11 +344,12 @@ def run_full_evaluation(
     device,
     X_tr_vox=None,
     Y_tr_vox=None,
+    n_matched_nlls=25,
     out_dir="experiments_unet_4pld/results"
 ):
     """
-    Runs full comparative benchmark across U-Net, Point-wise DNN, NLLS, Bayesian,
-    and historical references under exact same test set.
+    Runs full comparative benchmark across U-Net, Point-wise DNN, Calibrated Bayesian,
+    and NLLS estimators under strictly harmonized test conditions.
     """
     plots_dir = os.path.join(out_dir, "plots")
     preds_dir = os.path.join(out_dir, "predictions")
@@ -337,7 +359,7 @@ def run_full_evaluation(
     print("\n================ EVALUATION BENCHMARK ================")
     # 1. Normalize test inputs for U-Net
     X_test_norm = np.copy(X_test)
-    for c in range(4):
+    for c in range(X_test.shape[1]):
         X_test_norm[:, c] = (X_test[:, c] - stats["X_mean"][c]) / stats["X_std"][c]
 
     print("Evaluating U-Net...")
@@ -345,16 +367,16 @@ def run_full_evaluation(
 
     print("Training and evaluating Point-wise DNN Baseline...")
     if X_tr_vox is not None and Y_tr_vox is not None:
-        cbf_mlp, att_mlp = train_pointwise_dnn(X_tr_vox, Y_tr_vox, stats, device, epochs=25)
+        cbf_mlp, att_mlp = train_pointwise_dnn(X_tr_vox, Y_tr_vox, stats, device, epochs=30)
         cbf_dnn, att_dnn, t_dnn = evaluate_pointwise_dnn(cbf_mlp, att_mlp, X_test, masks_test, stats, device)
     else:
         cbf_dnn, att_dnn, t_dnn = None, None, 0.0
 
-    print("Evaluating Vectorized Bayesian Estimator...")
-    cbf_bayes, att_bayes, t_bayes = evaluate_bayesian_fast(X_test, snrs_test, masks_test)
+    print("Evaluating Calibrated Bayesian Estimator (GPU 100x100 grid)...")
+    cbf_bayes, att_bayes, t_bayes = evaluate_bayesian_calibrated(X_test, snrs_test, masks_test, device)
 
-    print("Evaluating NLLS Estimator (on representative test subset)...")
-    cbf_nlls, att_nlls, nlls_n, t_nlls = evaluate_nlls(X_test, masks_test, max_phantoms=15)
+    print(f"Evaluating NLLS Estimator (on matched subset of {n_matched_nlls} phantoms)...")
+    cbf_nlls, att_nlls, nlls_n, t_nlls = evaluate_nlls(X_test, masks_test, max_phantoms=n_matched_nlls)
 
     # Save prediction arrays
     np.save(os.path.join(preds_dir, "cbf_unet.npy"), cbf_unet)
@@ -365,38 +387,27 @@ def run_full_evaluation(
     np.save(os.path.join(preds_dir, "cbf_bayes.npy"), cbf_bayes)
     np.save(os.path.join(preds_dir, "att_bayes.npy"), att_bayes)
 
-    # ----------------- COMPUTE QUANTITATIVE METRICS -----------------
-    valid_mask_all = masks_test[:, 0] > 0.5
-    gt_cbf = Y_test[:, 0][valid_mask_all]
-    gt_att = Y_test[:, 1][valid_mask_all]
+    # ----------------- TABLE 1: HARMONIZED MATCHED BENCHMARK (EXACT SAME NLLS SUBSET) -----------------
+    valid_mask_matched = masks_test[:nlls_n, 0] > 0.5
+    gt_cbf_m = Y_test[:nlls_n, 0][valid_mask_matched]
+    gt_att_m = Y_test[:nlls_n, 1][valid_mask_matched]
 
-    methods_dict = {
-        "U-Net (Proposed)": (cbf_unet[valid_mask_all], att_unet[valid_mask_all], t_unet, len(X_test)),
-        "Bayesian (Grid)": (cbf_bayes[valid_mask_all], att_bayes[valid_mask_all], t_bayes, len(X_test))
+    matched_dict = {
+        "U-Net (Proposed)": (cbf_unet[:nlls_n][valid_mask_matched], att_unet[:nlls_n][valid_mask_matched], t_unet * (nlls_n / len(X_test))),
+        "Bayesian (Calibrated Grid)": (cbf_bayes[:nlls_n][valid_mask_matched], att_bayes[:nlls_n][valid_mask_matched], t_bayes * (nlls_n / len(X_test))),
+        "NLLS (TRF)": (cbf_nlls[valid_mask_matched], att_nlls[valid_mask_matched], t_nlls)
     }
     if cbf_dnn is not None:
-        methods_dict["Point-wise DNN"] = (cbf_dnn[valid_mask_all], att_dnn[valid_mask_all], t_dnn, len(X_test))
+        matched_dict["Point-wise DNN"] = (cbf_dnn[:nlls_n][valid_mask_matched], att_dnn[:nlls_n][valid_mask_matched], t_dnn * (nlls_n / len(X_test)))
 
-    # NLLS subset
-    valid_mask_nlls = masks_test[:nlls_n, 0] > 0.5
-    gt_cbf_nlls = Y_test[:nlls_n, 0][valid_mask_nlls]
-    gt_att_nlls = Y_test[:nlls_n, 1][valid_mask_nlls]
-    methods_dict["NLLS (TRF)"] = (cbf_nlls[valid_mask_nlls], att_nlls[valid_mask_nlls], t_nlls, nlls_n)
-
-    results_rows = []
-    for name, (pred_c, pred_a, duration, n_eval) in methods_dict.items():
-        if name == "NLLS (TRF)":
-            tc, ta = gt_cbf_nlls, gt_att_nlls
-        else:
-            tc, ta = gt_cbf, gt_att
-
-        met_c = calc_metrics(tc, pred_c)
-        met_a = calc_metrics(ta, pred_a)
-
-        results_rows.append({
+    matched_rows = []
+    for name, (pred_c, pred_a, duration) in matched_dict.items():
+        met_c = calc_metrics(gt_cbf_m, pred_c)
+        met_a = calc_metrics(gt_att_m, pred_a)
+        matched_rows.append({
             "Method": name,
-            "Evaluation": "Harmonized Spatial Test Set",
-            "N_Phantoms": n_eval,
+            "Evaluation": f"Harmonized Matched Set ({nlls_n} phantoms)",
+            "N_Phantoms": nlls_n,
             "Time (s)": round(duration, 2),
             "CBF RMSE": met_c["RMSE"],
             "CBF MAE": met_c["MAE"],
@@ -410,16 +421,48 @@ def run_full_evaluation(
             "ATT CCC": met_a["CCC"],
         })
 
-    # Add historical reference rows from reference_baselines.yaml
+    # ----------------- TABLE 2: FULL-SCALE BENCHMARK (ALL 100 PHANTOMS) -----------------
+    valid_mask_all = masks_test[:, 0] > 0.5
+    gt_cbf_all = Y_test[:, 0][valid_mask_all]
+    gt_att_all = Y_test[:, 1][valid_mask_all]
+
+    full_dict = {
+        "U-Net (Proposed)": (cbf_unet[valid_mask_all], att_unet[valid_mask_all], t_unet, len(X_test)),
+        "Bayesian (Calibrated Grid)": (cbf_bayes[valid_mask_all], att_bayes[valid_mask_all], t_bayes, len(X_test)),
+    }
+    if cbf_dnn is not None:
+        full_dict["Point-wise DNN"] = (cbf_dnn[valid_mask_all], att_dnn[valid_mask_all], t_dnn, len(X_test))
+    full_rows = []
+    for name, (pred_c, pred_a, duration, n_ph) in full_dict.items():
+        met_c = calc_metrics(gt_cbf_all, pred_c)
+        met_a = calc_metrics(gt_att_all, pred_a)
+        full_rows.append({
+            "Method": name,
+            "Evaluation": f"Full Test Set ({n_ph} phantoms)",
+            "N_Phantoms": n_ph,
+            "Time (s)": round(duration, 2),
+            "CBF RMSE": met_c["RMSE"],
+            "CBF MAE": met_c["MAE"],
+            "CBF Bias": met_c["Bias"],
+            "CBF R2": met_c["R2"],
+            "CBF CCC": met_c["CCC"],
+            "ATT RMSE": met_a["RMSE"],
+            "ATT MAE": met_a["MAE"],
+            "ATT Bias": met_a["Bias"],
+            "ATT R2": met_a["R2"],
+            "ATT CCC": met_a["CCC"],
+        })
+
+    # Add historical literature references
     ref_yaml_path = os.path.join(parent_dir, "reference_baselines.yaml")
     if os.path.exists(ref_yaml_path):
         with open(ref_yaml_path, "r") as f:
             ref_data = yaml.safe_load(f)
         for snr_key, methods in ref_data.items():
             for m_name, vals in methods.items():
-                results_rows.append({
+                full_rows.append({
                     "Method": f"{m_name} (Fixed Ref {snr_key})",
-                    "Evaluation": f"Historical Fixed Reference ({snr_key})",
+                    "Evaluation": f"Historical Fixed Literature ({snr_key})",
                     "N_Phantoms": "N/A (Historical 0D)",
                     "Time (s)": "N/A",
                     "CBF RMSE": vals.get("CBF_RMSE", "N/A"),
@@ -434,11 +477,90 @@ def run_full_evaluation(
                     "ATT CCC": vals.get("ATT_CCC", "N/A"),
                 })
 
-    metrics_df = pd.DataFrame(results_rows)
-    metrics_csv = os.path.join(out_dir, "master_comparison.csv")
-    metrics_df.to_csv(metrics_csv, index=False)
-    print("\nMaster Comparison Table:")
-    print(metrics_df.to_string())
+    matched_df = pd.DataFrame(matched_rows)
+    matched_df.to_csv(os.path.join(out_dir, "matched_benchmark_25_phantoms.csv"), index=False)
+
+    full_df = pd.DataFrame(full_rows)
+    full_df.to_csv(os.path.join(out_dir, "master_comparison.csv"), index=False)
+
+    print("\n--- Harmonized Matched Benchmark (Exact Same Phantoms across All Methods) ---")
+    print(matched_df.to_string())
+
+    print("\n--- Full-Scale Benchmark (All 100 Phantoms) ---")
+    print(full_df.to_string())
+
+    # ----------------- PHASE 6: PAIRED STATISTICAL COMPARISONS (PER-PHANTOM) -----------------
+    # Compute per-phantom metrics on the matched set
+    phantom_records = []
+    for p in range(nlls_n):
+        m_p = masks_test[p, 0] > 0.5
+        if not np.any(m_p):
+            continue
+        tc_p = Y_test[p, 0][m_p]
+        ta_p = Y_test[p, 1][m_p]
+
+        c_u = np.sqrt(np.mean((cbf_unet[p][m_p] - tc_p)**2))
+        a_u = np.sqrt(np.mean((att_unet[p][m_p] - ta_p)**2))
+        c_b = np.sqrt(np.mean((cbf_bayes[p][m_p] - tc_p)**2))
+        a_b = np.sqrt(np.mean((att_bayes[p][m_p] - ta_p)**2))
+        c_n = np.sqrt(np.mean((cbf_nlls[p][m_p] - tc_p)**2))
+        a_n = np.sqrt(np.mean((att_nlls[p][m_p] - ta_p)**2))
+
+        rec = {
+            "phantom_id": p,
+            "unet_cbf": c_u, "unet_att": a_u,
+            "bayes_cbf": c_b, "bayes_att": a_b,
+            "nlls_cbf": c_n, "nlls_att": a_n
+        }
+        if cbf_dnn is not None:
+            rec["dnn_cbf"] = np.sqrt(np.mean((cbf_dnn[p][m_p] - tc_p)**2))
+            rec["dnn_att"] = np.sqrt(np.mean((att_dnn[p][m_p] - ta_p)**2))
+        phantom_records.append(rec)
+
+    p_df = pd.DataFrame(phantom_records)
+    p_df.to_csv(os.path.join(out_dir, "per_phantom_metrics.csv"), index=False)
+
+    # Paired statistical comparisons (U-Net vs each baseline)
+    comparisons = [
+        ("Bayesian (Calibrated)", "bayes_cbf", "bayes_att"),
+        ("NLLS (TRF)", "nlls_cbf", "nlls_att")
+    ]
+    if cbf_dnn is not None:
+        comparisons.insert(0, ("Point-wise DNN", "dnn_cbf", "dnn_att"))
+
+    stat_rows = []
+    for baseline, c_col, a_col in comparisons:
+        diff_cbf = p_df["unet_cbf"] - p_df[c_col]
+        diff_att = p_df["unet_att"] - p_df[a_col]
+
+        t_c, p_t_c = stats_scipy.ttest_rel(p_df["unet_cbf"], p_df[c_col])
+        w_c, p_w_c = stats_scipy.wilcoxon(diff_cbf)
+
+        t_a, p_t_a = stats_scipy.ttest_rel(p_df["unet_att"], p_df[a_col])
+        w_a, p_w_a = stats_scipy.wilcoxon(diff_att)
+
+        ci_c_low, ci_c_high = stats_scipy.t.interval(0.95, len(diff_cbf)-1, loc=np.mean(diff_cbf), scale=stats_scipy.sem(diff_cbf))
+        ci_a_low, ci_a_high = stats_scipy.t.interval(0.95, len(diff_att)-1, loc=np.mean(diff_att), scale=stats_scipy.sem(diff_att))
+
+        stat_rows.append({
+            "Comparison": f"U-Net vs {baseline}",
+            "N_Phantoms": len(p_df),
+            "CBF Mean Diff": round(float(np.mean(diff_cbf)), 4),
+            "CBF 95% CI": f"[{ci_c_low:.4f}, {ci_c_high:.4f}]",
+            "CBF t-test p-value": f"{p_t_c:.2e}",
+            "CBF Wilcoxon p-value": f"{p_w_c:.2e}",
+            "CBF Significant (p<0.05)": bool(p_t_c < 0.05),
+            "ATT Mean Diff": round(float(np.mean(diff_att)), 4),
+            "ATT 95% CI": f"[{ci_a_low:.4f}, {ci_a_high:.4f}]",
+            "ATT t-test p-value": f"{p_t_a:.2e}",
+            "ATT Wilcoxon p-value": f"{p_w_a:.2e}",
+            "ATT Significant (p<0.05)": bool(p_t_a < 0.05),
+        })
+
+    stat_df = pd.DataFrame(stat_rows)
+    stat_df.to_csv(os.path.join(out_dir, "paired_statistical_tests.csv"), index=False)
+    print("\n--- Paired Statistical Tests (Unit of Replication: Independent Phantoms) ---")
+    print(stat_df.to_string())
 
     # ----------------- SNR-STRATIFIED EVALUATION -----------------
     snr_rows = []
@@ -450,8 +572,14 @@ def run_full_evaluation(
         tc_snr = Y_test[mask_snr, 0][v_mask_snr]
         ta_snr = Y_test[mask_snr, 1][v_mask_snr]
 
-        for name, pred_tuple in [("U-Net", (cbf_unet, att_unet)),
-                                 ("Bayesian", (cbf_bayes, att_bayes))]:
+        snr_methods = [
+            ("U-Net", (cbf_unet, att_unet)),
+            ("Bayesian", (cbf_bayes, att_bayes))
+        ]
+        if cbf_dnn is not None:
+            snr_methods.append(("Point-wise DNN", (cbf_dnn, att_dnn)))
+
+        for name, pred_tuple in snr_methods:
             pc = pred_tuple[0][mask_snr][v_mask_snr]
             pa = pred_tuple[1][mask_snr][v_mask_snr]
             mc = calc_metrics(tc_snr, pc)
@@ -466,8 +594,7 @@ def run_full_evaluation(
             })
     if len(snr_rows) > 0:
         snr_df = pd.DataFrame(snr_rows)
-        snr_csv = os.path.join(out_dir, "snr_stratified_metrics.csv")
-        snr_df.to_csv(snr_csv, index=False)
+        snr_df.to_csv(os.path.join(out_dir, "snr_stratified_metrics.csv"), index=False)
         print("\nSNR Stratified Metrics:")
         print(snr_df.to_string())
 
@@ -494,98 +621,175 @@ def run_full_evaluation(
     with open(os.path.join(out_dir, "spatial_metrics.json"), "w") as f:
         json.dump(spatial_metrics, f, indent=2)
 
-    print("\nSpatial Quality Metrics (U-Net):")
-    print(f"CBF SSIM: {spatial_metrics['CBF_SSIM_mean']:.4f} ± {spatial_metrics['CBF_SSIM_std']:.4f}")
-    print(f"CBF PSNR: {spatial_metrics['CBF_PSNR_mean']:.2f} ± {spatial_metrics['CBF_PSNR_std']:.2f} dB")
-    print(f"ATT SSIM: {spatial_metrics['ATT_SSIM_mean']:.4f} ± {spatial_metrics['ATT_SSIM_std']:.4f}")
-    print(f"ATT PSNR: {spatial_metrics['ATT_PSNR_mean']:.2f} ± {spatial_metrics['ATT_PSNR_std']:.2f} dB")
+    # ----------------- PLOT GENERATION -----------------
+    print("Generating benchmark plots...")
+    generate_evaluation_plots(
+        Y_test=Y_test,
+        masks_test=masks_test,
+        cbf_unet=cbf_unet,
+        att_unet=att_unet,
+        cbf_dnn=cbf_dnn,
+        att_dnn=att_dnn,
+        cbf_bayes=cbf_bayes,
+        att_bayes=att_bayes,
+        cbf_nlls=cbf_nlls,
+        att_nlls=att_nlls,
+        plots_dir=plots_dir
+    )
 
-    # ----------------- VISUALIZATION MAPS -----------------
-    plot_idx = 0
-    fig, axes = plt.subplots(2, 4, figsize=(16, 8))
-    m_slice = masks_test[plot_idx, 0] > 0.5
+    return full_df
 
-    # CBF
-    gt_c_slice = np.where(m_slice, Y_test[plot_idx, 0], np.nan)
-    pr_c_slice = np.where(m_slice, cbf_unet[plot_idx], np.nan)
-    err_c_slice = np.where(m_slice, np.abs(cbf_unet[plot_idx] - Y_test[plot_idx, 0]), np.nan)
+def generate_evaluation_plots(
+    Y_test,
+    masks_test,
+    cbf_unet,
+    att_unet,
+    cbf_dnn,
+    att_dnn,
+    cbf_bayes,
+    att_bayes,
+    cbf_nlls,
+    att_nlls,
+    plots_dir
+):
+    """Generates prediction maps, multi-method scatter plots, and Bland-Altman plots."""
+    # 1. Prediction maps for sample phantoms (e.g. phantoms 0, 1, 2)
+    sample_indices = [0, 1, 2] if len(Y_test) >= 3 else list(range(len(Y_test)))
+    for s_idx in sample_indices:
+        mask = masks_test[s_idx, 0] > 0.5
+        gt_c = np.where(mask, Y_test[s_idx, 0], np.nan)
+        pr_c = np.where(mask, cbf_unet[s_idx], np.nan)
+        err_c = np.where(mask, np.abs(cbf_unet[s_idx] - Y_test[s_idx, 0]), np.nan)
 
-    im0 = axes[0, 0].imshow(gt_c_slice, cmap="magma", vmin=0, vmax=90)
-    axes[0, 0].set_title("Ground Truth CBF")
-    plt.colorbar(im0, ax=axes[0, 0], fraction=0.046, pad=0.04)
+        gt_a = np.where(mask, Y_test[s_idx, 1], np.nan)
+        pr_a = np.where(mask, att_unet[s_idx], np.nan)
+        err_a = np.where(mask, np.abs(att_unet[s_idx] - Y_test[s_idx, 1]), np.nan)
 
-    im1 = axes[0, 1].imshow(pr_c_slice, cmap="magma", vmin=0, vmax=90)
-    axes[0, 1].set_title("U-Net Predicted CBF")
-    plt.colorbar(im1, ax=axes[0, 1], fraction=0.046, pad=0.04)
+        fig, axes = plt.subplots(2, 3, figsize=(14, 8))
+        im0 = axes[0, 0].imshow(gt_c, cmap="hot", vmin=0, vmax=100)
+        axes[0, 0].set_title(f"Phantom {s_idx}: True CBF")
+        plt.colorbar(im0, ax=axes[0, 0], fraction=0.046, pad=0.04)
 
-    im2 = axes[0, 2].imshow(err_c_slice, cmap="hot", vmin=0, vmax=15)
-    axes[0, 2].set_title("CBF Absolute Error")
-    plt.colorbar(im2, ax=axes[0, 2], fraction=0.046, pad=0.04)
+        im1 = axes[0, 1].imshow(pr_c, cmap="hot", vmin=0, vmax=100)
+        axes[0, 1].set_title("U-Net Pred CBF")
+        plt.colorbar(im1, ax=axes[0, 1], fraction=0.046, pad=0.04)
 
-    # Input signal ch 0 (PLD 1.525s)
-    im3 = axes[0, 3].imshow(X_test[plot_idx, 0], cmap="gray")
-    axes[0, 3].set_title("Noisy Signal (PLD 1.525s)")
-    plt.colorbar(im3, ax=axes[0, 3], fraction=0.046, pad=0.04)
+        im2 = axes[0, 2].imshow(err_c, cmap="magma", vmin=0, vmax=15)
+        axes[0, 2].set_title("CBF Absolute Error")
+        plt.colorbar(im2, ax=axes[0, 2], fraction=0.046, pad=0.04)
 
-    # ATT
-    gt_a_slice = np.where(m_slice, Y_test[plot_idx, 1], np.nan)
-    pr_a_slice = np.where(m_slice, att_unet[plot_idx], np.nan)
-    err_a_slice = np.where(m_slice, np.abs(att_unet[plot_idx] - Y_test[plot_idx, 1]), np.nan)
+        im3 = axes[1, 0].imshow(gt_a, cmap="viridis", vmin=0.5, vmax=3.0)
+        axes[1, 0].set_title(f"Phantom {s_idx}: True ATT")
+        plt.colorbar(im3, ax=axes[1, 0], fraction=0.046, pad=0.04)
 
-    im4 = axes[1, 0].imshow(gt_a_slice, cmap="viridis", vmin=0.5, vmax=2.5)
-    axes[1, 0].set_title("Ground Truth ATT")
-    plt.colorbar(im4, ax=axes[1, 0], fraction=0.046, pad=0.04)
+        im4 = axes[1, 1].imshow(pr_a, cmap="viridis", vmin=0.5, vmax=3.0)
+        axes[1, 1].set_title("U-Net Pred ATT")
+        plt.colorbar(im4, ax=axes[1, 1], fraction=0.046, pad=0.04)
 
-    im5 = axes[1, 1].imshow(pr_a_slice, cmap="viridis", vmin=0.5, vmax=2.5)
-    axes[1, 1].set_title("U-Net Predicted ATT")
-    plt.colorbar(im5, ax=axes[1, 1], fraction=0.046, pad=0.04)
+        im5 = axes[1, 2].imshow(err_a, cmap="magma", vmin=0, vmax=0.5)
+        axes[1, 2].set_title("ATT Absolute Error")
+        plt.colorbar(im5, ax=axes[1, 2], fraction=0.046, pad=0.04)
 
-    im6 = axes[1, 2].imshow(err_a_slice, cmap="hot", vmin=0, vmax=0.6)
-    axes[1, 2].set_title("ATT Absolute Error")
-    plt.colorbar(im6, ax=axes[1, 2], fraction=0.046, pad=0.04)
+        for ax in axes.flat:
+            ax.axis("off")
+        plt.tight_layout()
+        plt.savefig(os.path.join(plots_dir, f"prediction_maps_sample_{s_idx}.png"), dpi=200)
+        plt.close()
 
-    # Brain Mask
-    im7 = axes[1, 3].imshow(masks_test[plot_idx, 0], cmap="gray")
-    axes[1, 3].set_title("Valid Brain Mask")
-    plt.colorbar(im7, ax=axes[1, 3], fraction=0.046, pad=0.04)
+    # 2. Scatter Plots (Subsampled valid voxels from matched set)
+    valid_m = masks_test[:len(cbf_nlls), 0] > 0.5
+    gt_c_all = Y_test[:len(cbf_nlls), 0][valid_m]
+    gt_a_all = Y_test[:len(cbf_nlls), 1][valid_m]
 
-    for ax in axes.flatten():
-        ax.axis("off")
+    methods_data = [
+        ("U-Net", cbf_unet[:len(cbf_nlls)][valid_m], att_unet[:len(cbf_nlls)][valid_m], "tab:blue"),
+        ("Point-wise DNN", cbf_dnn[:len(cbf_nlls)][valid_m] if cbf_dnn is not None else None, 
+                           att_dnn[:len(cbf_nlls)][valid_m] if att_dnn is not None else None, "tab:orange"),
+        ("Bayesian", cbf_bayes[:len(cbf_nlls)][valid_m], att_bayes[:len(cbf_nlls)][valid_m], "tab:green"),
+        ("NLLS", cbf_nlls[valid_m], att_nlls[valid_m], "tab:purple")
+    ]
 
-    plt.tight_layout()
-    plt.savefig(os.path.join(plots_dir, "prediction_maps_sample.png"), dpi=200)
-    plt.close()
+    n_pts = min(4000, len(gt_c_all))
+    sub_idx = np.random.RandomState(42).choice(len(gt_c_all), size=n_pts, replace=False)
+    gt_c_sub = gt_c_all[sub_idx]
+    gt_a_sub = gt_a_all[sub_idx]
 
-    # Scatter Plots
-    fig, (ax_s1, ax_s2) = plt.subplots(1, 2, figsize=(12, 5))
-    sample_sub = np.random.choice(len(gt_cbf), size=min(10000, len(gt_cbf)), replace=False)
+    fig, axes = plt.subplots(2, 4, figsize=(20, 10))
+    for col, (name, pred_c, pred_a, colr) in enumerate(methods_data):
+        if pred_c is None:
+            continue
+        p_c_sub = pred_c[sub_idx]
+        p_a_sub = pred_a[sub_idx]
 
-    ax_s1.scatter(gt_cbf[sample_sub], cbf_unet[valid_mask_all][sample_sub], alpha=0.15, s=8, color="darkblue")
-    ax_s1.plot([0, 100], [0, 100], "r--", lw=2, label="Identity")
-    ax_s1.set_xlabel("Ground Truth CBF (ml/100g/min)")
-    ax_s1.set_ylabel("U-Net Predicted CBF")
-    ax_s1.set_title("CBF Estimation Correlation")
-    ax_s1.legend()
-    ax_s1.grid(True, alpha=0.3)
+        # CBF
+        axes[0, col].scatter(gt_c_sub, p_c_sub, alpha=0.25, s=8, color=colr)
+        axes[0, col].plot([0, 100], [0, 100], "k--", lw=1.5, label="Identity")
+        rmse_c = np.sqrt(np.mean((pred_c - gt_c_all)**2))
+        axes[0, col].set_title(f"{name}\nCBF RMSE: {rmse_c:.2f} ml/100g/min", fontsize=11)
+        axes[0, col].set_xlabel("True CBF")
+        axes[0, col].set_ylabel("Predicted CBF" if col == 0 else "")
+        axes[0, col].set_xlim(0, 100)
+        axes[0, col].set_ylim(0, 100)
+        axes[0, col].grid(True, alpha=0.3)
 
-    ax_s2.scatter(gt_att[sample_sub], att_unet[valid_mask_all][sample_sub], alpha=0.15, s=8, color="darkgreen")
-    ax_s2.plot([0.5, 3.0], [0.5, 3.0], "r--", lw=2, label="Identity")
-    ax_s2.set_xlabel("Ground Truth ATT (s)")
-    ax_s2.set_ylabel("U-Net Predicted ATT")
-    ax_s2.set_title("ATT Estimation Correlation")
-    ax_s2.legend()
-    ax_s2.grid(True, alpha=0.3)
+        # ATT
+        axes[1, col].scatter(gt_a_sub, p_a_sub, alpha=0.25, s=8, color=colr)
+        axes[1, col].plot([0.5, 3.0], [0.5, 3.0], "k--", lw=1.5, label="Identity")
+        rmse_a = np.sqrt(np.mean((pred_a - gt_a_all)**2))
+        axes[1, col].set_title(f"ATT RMSE: {rmse_a:.3f} s", fontsize=11)
+        axes[1, col].set_xlabel("True ATT (s)")
+        axes[1, col].set_ylabel("Predicted ATT (s)" if col == 0 else "")
+        axes[1, col].set_xlim(0.5, 3.0)
+        axes[1, col].set_ylim(0.5, 3.0)
+        axes[1, col].grid(True, alpha=0.3)
 
     plt.tight_layout()
     plt.savefig(os.path.join(plots_dir, "scatter_plots.png"), dpi=200)
     plt.close()
 
-    print("All evaluation maps and plots saved to:", plots_dir)
-    return metrics_df
+    # 3. Bland-Altman Analysis (U-Net)
+    diff_c = cbf_unet[:len(cbf_nlls)][valid_m] - gt_c_all
+    mean_c = 0.5 * (cbf_unet[:len(cbf_nlls)][valid_m] + gt_c_all)
+    diff_a = att_unet[:len(cbf_nlls)][valid_m] - gt_a_all
+    mean_a = 0.5 * (att_unet[:len(cbf_nlls)][valid_m] + gt_a_all)
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+    d_c_sub = diff_c[sub_idx]
+    m_c_sub = mean_c[sub_idx]
+    mean_diff_c = np.mean(diff_c)
+    sd_diff_c = np.std(diff_c)
+
+    ax1.scatter(m_c_sub, d_c_sub, alpha=0.25, s=8, color="tab:blue")
+    ax1.axhline(mean_diff_c, color="red", linestyle="--", label=f"Mean: {mean_diff_c:.2f}")
+    ax1.axhline(mean_diff_c + 1.96 * sd_diff_c, color="gray", linestyle=":", label=f"+1.96 SD: {mean_diff_c + 1.96 * sd_diff_c:.2f}")
+    ax1.axhline(mean_diff_c - 1.96 * sd_diff_c, color="gray", linestyle=":", label=f"-1.96 SD: {mean_diff_c - 1.96 * sd_diff_c:.2f}")
+    ax1.set_xlabel("Mean CBF (ml/100g/min)")
+    ax1.set_ylabel("Difference (Pred - True)")
+    ax1.set_title("U-Net Bland-Altman: CBF")
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+
+    d_a_sub = diff_a[sub_idx]
+    m_a_sub = mean_a[sub_idx]
+    mean_diff_a = np.mean(diff_a)
+    sd_diff_a = np.std(diff_a)
+
+    ax2.scatter(m_a_sub, d_a_sub, alpha=0.25, s=8, color="tab:green")
+    ax2.axhline(mean_diff_a, color="red", linestyle="--", label=f"Mean: {mean_diff_a:.3f}")
+    ax2.axhline(mean_diff_a + 1.96 * sd_diff_a, color="gray", linestyle=":", label=f"+1.96 SD: {mean_diff_a + 1.96 * sd_diff_a:.3f}")
+    ax2.axhline(mean_diff_a - 1.96 * sd_diff_a, color="gray", linestyle=":", label=f"-1.96 SD: {mean_diff_a - 1.96 * sd_diff_a:.3f}")
+    ax2.set_xlabel("Mean ATT (s)")
+    ax2.set_ylabel("Difference (Pred - True)")
+    ax2.set_title("U-Net Bland-Altman: ATT")
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(plots_dir, "bland_altman_plots.png"), dpi=200)
+    plt.close()
 
 if __name__ == "__main__":
     print("Testing evaluate module...")
-    # Smoke test
     N, C, H, W = 4, 4, 32, 32
     X_d = np.random.randn(N, C, H, W).astype(np.float32)
     Y_d = np.random.uniform(20, 80, (N, 2, H, W)).astype(np.float32)
@@ -598,5 +802,5 @@ if __name__ == "__main__":
     }
     model = ASLUNet(4, 2, features=[16, 32, 64, 128])
     dev = torch.device("cpu")
-    run_full_evaluation(model, X_d, Y_d, M_d, S_d, st, dev, out_dir="experiments_unet_4pld/results_test")
+    run_full_evaluation(model, X_d, Y_d, M_d, S_d, st, dev, n_matched_nlls=2, out_dir="experiments_unet_4pld/results_test")
     print("Evaluate module tests passed successfully!")

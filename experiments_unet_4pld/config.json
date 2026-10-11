@@ -43,7 +43,7 @@
     "lr_factor": 0.5,
     "lr_patience": 5,
     "min_lr": 1e-6,
-    "seeds": [42, 43, 44]
+    "seeds": [42, 123, 2024]
   }
 }
 

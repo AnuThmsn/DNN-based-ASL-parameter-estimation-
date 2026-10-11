@@ -34,9 +34,10 @@ def compute_normalization_stats(X_tr, Y_tr, masks_tr):
     valid_mask = masks_tr[:, 0] > 0.5 # [N, H, W] boolean
     
     # Per-channel input statistics over valid brain voxels
-    X_mean = np.zeros(4, dtype=np.float32)
-    X_std = np.zeros(4, dtype=np.float32)
-    for c in range(4):
+    n_channels = X_tr.shape[1]
+    X_mean = np.zeros(n_channels, dtype=np.float32)
+    X_std = np.zeros(n_channels, dtype=np.float32)
+    for c in range(n_channels):
         ch_vals = X_tr[:, c][valid_mask]
         X_mean[c] = np.mean(ch_vals)
         X_std[c] = np.std(ch_vals) + 1e-8
@@ -65,9 +66,10 @@ def normalize_dataset(X, Y, masks, stats):
     Applies training-derived normalization to signals and targets.
     Background voxels remain zeroed in targets to prevent background exploitation.
     """
-    # Normalize inputs channel-wise: shape [N, 4, H, W]
+    # Normalize inputs channel-wise: shape [N, C, H, W]
     X_norm = np.copy(X)
-    for c in range(4):
+    n_channels = X.shape[1]
+    for c in range(n_channels):
         X_norm[:, c] = (X[:, c] - stats["X_mean"][c]) / stats["X_std"][c]
 
     # Normalize targets
