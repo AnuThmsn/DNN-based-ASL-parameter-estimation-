@@ -212,3 +212,4 @@ All figures were saved in high resolution (300 DPI) to `D:\ASL_WORKSPACE\experim
    Because ASL signals obey exact pointwise physical equations (Buxton kinetic model), pure spatial convolutions are vulnerable to boundary leakage. A parallel $1\times 1$ point-wise bypass with spatial gating ensures that single-voxel physical fidelity is maintained at high-contrast boundaries while still benefiting from spatial denoising in homogeneous regions.
 3. **Multi-Delay Protocol Fidelity (4 PLDs):**  
    The primary four PLDs ($[1.525, 2.025, 2.525, 3.025]\text{ s}$) remain the gold standard acquisition protocol. Both CBF and ATT require this temporal coverage for reliable transit time separation.
+
