@@ -93,3 +93,4 @@ To isolate the effect of physiological diversity from sample count, we propose a
 1. **Elimination of Vascular Artifacts:** Training with explicit macrovascular aBV will enable the spatial U-Net to segment and suppress intravascular transit artifacts, preventing massive local CBF overestimation.
 2. **Clinical Generalizability:** Robust parameter estimation under collateral circulation where ATT exceeds $2.5$ s.
 3. **Decoupled Science:** Conclusively distinguishes whether deep learning performance bottlenecks in ASL-MRI are caused by data starvation ($N$) or physical model misspecification ($\mathcal{P}_{\text{phys}}$).
+
