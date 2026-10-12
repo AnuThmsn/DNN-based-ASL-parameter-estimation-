@@ -9,7 +9,7 @@
 
 ## 1. Executive Summary & Core Scientific Findings
 
-Across **18 completed runs** spanning six nested dataset sizes ($N \in \{100, 200, 400, 600, 1200, 2400\}$) across three random seeds (42, 123, 2024), evaluated against fixed, frozen independent validation ($N=100$) and test cohorts ($N=100$, 124,534 valid brain voxels):
+Across **18 completed runs** spanning six nested dataset sizes ($N \in \{100, 200, 400, 600, 1200, 2400\}$) across three random seeds (42, 123, 2024), evaluated against fixed, frozen independent validation ($N=100$) and test cohorts ($N=100$, 171,356 valid brain voxels; correcting earlier typographical mention of 124,534):
 
 > [!IMPORTANT]
 > **Key Scientific Conclusions:**

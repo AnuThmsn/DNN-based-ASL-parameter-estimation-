@@ -75,14 +75,14 @@ For ground-truth values $y_i$ and model predictions $\hat{y}_i$ across $N$ valid
    $$\text{Bias} = \frac{1}{N}\sum_{i=1}^N (\hat{y}_i - y_i)$$
 
 ### 2.4 Evaluation Unit & Aggregation Protocol
-- **Primary Pooled Benchmark:** All primary metrics in `snr_wise_unet_results.csv` and `combined_snr10_snr15_comparison.csv` are calculated across all valid brain-parenchyma voxels pooled across the 100 canonical test phantoms ($N = 124,534$ total voxels with $\text{mask} > 0.5$).
+- **Primary Pooled Benchmark:** All primary metrics in `snr_wise_unet_results.csv` and `combined_snr10_snr15_comparison.csv` are calculated across all valid brain-parenchyma voxels pooled across the 100 canonical test phantoms ($N = 171,356$ total voxels with $\text{mask} > 0.5$; note: earlier draft documentation inadvertently cited 124,534 due to a typographical carryover, corrected herein).
 - **Per-Phantom Summary:** In addition, per-phantom metrics are independently calculated and reported in `snr_wise_unet_per_phantom.csv` ($100 \times 6 = 600$ phantom evaluations per model). Mean $\pm$ standard deviation across the 100 test phantoms is recorded in `snr_wise_unet_results.csv` under columns `CBF_RMSE_mean_phantom`, `CBF_RMSE_std_phantom`, `ATT_RMSE_mean_phantom`, and `ATT_RMSE_std_phantom`.
 
 ---
 
 ## 3. Required U-Net Results Across SNR
 
-### Table A: CBF Estimation Metrics Across SNR ($N=100$ Test Phantoms, 124,534 Valid Voxels)
+### Table A: CBF Estimation Metrics Across SNR ($N=100$ Test Phantoms, 171,356 Valid Voxels)
 
 | Model | SNR | CBF RMSE (mL/100 g/min) | CBF MAE (mL/100 g/min) | CBF Bias (mL/100 g/min) | CBF $R^2$ | Lin's CCC | Per-Phantom RMSE (Mean $\pm$ SD) |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -101,7 +101,7 @@ For ground-truth values $y_i$ and model predictions $\hat{y}_i$ across $N$ valid
 
 ---
 
-### Table B: ATT Estimation Metrics Across SNR ($N=100$ Test Phantoms, 124,534 Valid Voxels)
+### Table B: ATT Estimation Metrics Across SNR ($N=100$ Test Phantoms, 171,356 Valid Voxels)
 
 | Model | SNR | ATT RMSE (s) | ATT MAE (s) | ATT Bias (s) | ATT $R^2$ | Lin's CCC | Per-Phantom RMSE (Mean $\pm$ SD) |
 |---|---:|---:|---:|---:|---:|---:|---:|

@@ -28,6 +28,11 @@ if parent_dir not in sys.path:
 from experiments_unet_4pld.model import ASLUNet
 from experiments_unet_4pld.dataset import compute_normalization_stats, denormalize_predictions
 from experiments_unet_4pld.run_snr_benchmark import calc_lin_ccc
+from experiments_unet_4pld.audit.cohort_integrity_check import (
+    audit_cohort_dataset,
+    check_splits_independence,
+    verify_nested_subsets
+)
 
 def sha256_file(filepath):
     hasher = hashlib.sha256()
@@ -90,17 +95,20 @@ def main():
         train_mask = train_mask[:, np.newaxis, :, :]
     print(f"Master training pool: {train_x.shape[0]} phantoms.")
 
-    # Audit cohort independence
-    train_center = train_x[:, 0, 32, 32]
-    val_center = val_x[:, 0, 32, 32]
-    test_center = test_x[:, 0, 32, 32]
+    # Audit cohort independence with full cryptographic sample hashes
+    print("Performing cryptographic cohort integrity audit...")
+    train_aud = audit_cohort_dataset(train_nested_path, "train", 42)
+    val_aud   = audit_cohort_dataset(val_path, "val", 99)
+    test_aud  = audit_cohort_dataset(test_path, "test", 7)
 
-    overlap_tv = len(set(train_center).intersection(set(val_center)))
-    overlap_tt = len(set(train_center).intersection(set(test_center)))
-    overlap_vt = len(set(val_center).intersection(set(test_center)))
-    print(f"Phantom overlap: Train-Val={overlap_tv}, Train-Test={overlap_tt}, Val-Test={overlap_vt}")
-    assert overlap_tv == 0 and overlap_tt == 0 and overlap_vt == 0, "LEAKAGE DETECTED!"
-    print("COHORT INDEPENDENCE CONFIRMED: Zero data leakage.")
+    ind_check = check_splits_independence(train_aud, val_aud, test_aud)
+    print(f"Cryptographic sample overlap: Train-Val={ind_check['overlap_train_val']}, Train-Test={ind_check['overlap_train_test']}, Val-Test={ind_check['overlap_val_test']}")
+    assert ind_check["is_independent"], "CRITICAL: DATA LEAKAGE DETECTED AMONG SPLITS!"
+    print(f"COHORT INDEPENDENCE CONFIRMED: Zero data leakage across {train_aud['n_samples']} train, {val_aud['n_samples']} val, and {test_aud['n_samples']} test phantoms.")
+
+    nest_check = verify_nested_subsets(train_aud, [100, 200, 400, 600, 1200, 2400])
+    assert nest_check["all_strictly_nested"], "CRITICAL: NESTED SUBSET INTEGRITY VIOLATED!"
+    print("NESTED SUBSET INTEGRITY CONFIRMED: Strict prefix inclusion verified across all 6 sample sizes.")
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Verification compute device: {device}")

@@ -34,7 +34,7 @@ $$\mathcal{D}_{100} \subset \mathcal{D}_{200} \subset \mathcal{D}_{400} \subset 
 
 ### 2.2 Independent Evaluation Cohorts
 - **Validation Set:** $N=100$ phantoms generated with seed 99 (fixed throughout all training runs for early stopping).
-- **Test Set:** $N=100$ phantoms generated with seed 7 (fixed across all runs, evaluated at native SNR=10, 124,534 valid brain voxels).
+- **Test Set:** $N=100$ phantoms generated with seed 7 (fixed across all runs, evaluated at native SNR=10, exactly 171,356 valid brain voxels; note: earlier draft documentation inadvertently cited 124,534 due to a typographical carryover, corrected herein).
 
 ### 2.3 Preflight Auditing and Leakage Verification
 All 8 automated preflight tests in `experiments_unet_4pld/tests/test_preflight_and_leakage.py` passed with 100% success:
