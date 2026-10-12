@@ -1,9 +1,10 @@
-# Research-Grade ASL U-Net Training-Data Scaling & Plateau Study
+# Research-Grade ASL U-Net Training-Data Scaling & Diminishing Returns Study
 
 **Experiment Identifier:** `training_size_scaling_v1`  
 **Repository Branch:** `storage-safe-4pld-final`  
 **Workspace Root:** `D:\ASL_WORKSPACE`  
-**Primary Architecture:** 4-PLD Spatial U-Net (Input Channels: 4, Output Channels: 2, Conv Features: `[64, 128, 256, 512]`)  
+**Primary Architecture:** 4-PLD Spatial U-Net (Input Channels: 4, Output Channels: 2, Conv Features: `[32, 64, 128, 256]`, Bottleneck Channels: 512, Trainable Parameters: **7,763,362**)<br>
+*(Architecture Note: Reconciled based on checkpoint state dictionary inspection and `config.json`; see `FORENSIC_AUDIT_REPORT.md`)*<br>
 **Canonical Acquisition Parameters:** PLDs = `[1.525, 2.025, 2.525, 3.025]` s, Labeling Duration $\tau = 1.80$ s  
 **Date Completed:** October 12, 2026  
 
@@ -11,15 +12,16 @@
 
 ## 1. Executive Summary
 
-This study executes a controlled, research-grade empirical scaling experiment investigating whether extending synthetic training cohorts beyond 2,400 phantoms up to 19,200 phantoms continues to improve parameter estimation accuracy for Cerebral Blood Flow (CBF) and Arterial Transit Time (ATT), or whether performance plateaus.
+This study executes a controlled, research-grade empirical scaling experiment investigating whether extending synthetic training cohorts beyond 2,400 phantoms up to 19,200 phantoms continues to improve parameter estimation accuracy for Cerebral Blood Flow (CBF) and Arterial Transit Time (ATT), or whether performance exhibits diminishing marginal returns.
 
 ### Key Findings
-1. **Statistically Significant Error Reduction:** Extending training size from $N=2,400$ to $N=19,200$ phantoms reduces test RMSE from $1.0515 \pm 0.0172$ to $0.8632 \pm 0.0086$ mL/100g/min for CBF ($-17.90\%$, paired $t=12.90, p=0.00596$), and from $0.0597 \pm 0.0006$ to $0.0516 \pm 0.0006$ seconds for ATT ($-13.68\%$, paired $t=41.52, p=0.00058$).
-2. **Empirical Power-Law Regime:** Both parameter errors follow strict log-linear empirical scaling across the tested range ($R^2 > 0.984$):
+1. **Monotonic Error Reduction:** Extending training size from $N=2,400$ to $N=19,200$ phantoms reduces test RMSE monotonically from $1.0515 \pm 0.0172$ to $0.8632 \pm 0.0086$ mL/100g/min for CBF ($-17.90\%$, paired difference: $0.188 \pm 0.025$ mL/100g/min, paired $t=12.90, p=0.00596$ across $n=3$ matched training seeds), and from $0.0597 \pm 0.0006$ to $0.0516 \pm 0.0006$ seconds for ATT ($-13.68\%$, paired difference: $0.0082 \pm 0.0003$ s, paired $t=41.52, p=0.00058$).
+2. **Empirical Power-Law Regime:** Over the experimental window $N \in [2400, 19200]$, test errors follow log-linear empirical scaling ($R^2 > 0.984$):
    $$\text{RMSE}_{\text{CBF}}(N) = 2.1685 \cdot N^{-0.0926} \quad (R^2 = 0.9895, p = 0.0053)$$
    $$\text{RMSE}_{\text{ATT}}(N) = 0.1015 \cdot N^{-0.0691} \quad (R^2 = 0.9842, p = 0.0079)$$
-3. **Onset of Diminishing Marginal Returns:** While absolute performance continues to improve monotonically without evidence of catastrophic overfitting, the scaling exponents ($\alpha_{\text{CBF}} \approx 0.093$, $\alpha_{\text{ATT}} \approx 0.069$) demonstrate strong diminishing returns. Doubling the training cohort yields only $\approx 5\text{--}8\%$ relative error reduction for CBF and $\approx 4\text{--}6\%$ for ATT, while increasing computational training cost by $100\%$ per doubling.
-4. **Generalization & Physical Realizability:** Out-of-bounds parameter predictions prior to physical clamping remained strictly $0.00\%$ for CBF and $< 0.10\%$ for ATT across all models, proving that larger synthetic training sets enforce tighter physical regularization.
+   *Note: These relationships are empirical fits specific to this architecture, forward simulator, and experimental range, rather than universal asymptotic laws.*
+3. **Onset of Diminishing Marginal Returns (No Demonstrated Plateau):** Test error decreased monotonically across all tested sizes; a mathematical plateau ($\Delta = 0$) has not been established within the tested range. However, the sub-linear scaling exponents ($\alpha_{\text{CBF}} \approx 0.093$, $\alpha_{\text{ATT}} \approx 0.069$) demonstrate strong diminishing returns. Doubling the training cohort yields only $\approx 5\text{--}8\%$ relative error reduction for CBF and $\approx 4\text{--}6\%$ for ATT, while doubling computational training cost per run.
+4. **Physical Boundary Adherence:** Across all trained models, out-of-bounds parameter predictions prior to physical clamping remained negligible: strictly $0.00\%$ for CBF (no voxels outside $[0, 100]$ mL/100g/min) and $< 0.10\%$ for ATT (voxels outside $[0.5, 3.0]$ s averaged $0.052\text{--}0.095\%$). Unconstrained network predictions stayed almost entirely within physiological bounds without explicit bound loss penalties.
 5. **Storage and Workspace Integrity:** All intermediate datasets, caches, checkpoints, and logs were strictly isolated on `D:\ASL_WORKSPACE`, leaving $140.29$ GB free on `D:` and preserving $30.75$ GB free on system drive `C:`.
 
 ---
@@ -75,7 +77,7 @@ All conditions were trained across three independent random seeds (`42`, `123`, 
 
 ---
 
-## 4. Empirical Power-Law & Plateau Analysis
+## 4. Empirical Power-Law & Marginal Returns Analysis
 
 ### 4.1 Statistical Power-Law Fitting
 Power laws of the form $\text{RMSE}(N) = A \cdot N^{-\alpha}$ were fitted by ordinary least squares in log-log space:
@@ -86,9 +88,9 @@ $$\ln(\text{RMSE}) = \ln(A) - \alpha \ln(N)$$
 - **ATT Scaling Exponent:** $\alpha_{\text{ATT}} = 0.0691 \pm 0.0062$ ($R^2 = 0.9842$, $p = 0.0079$)
 
 > [!NOTE]
-> **Scientific Interpretation:** These power laws are empirical characterizations describing the rate of error reduction under the current synthetic generator and U-Net model capacity over the range $N \in [2400, 19200]$. They should not be conflated with universal asymptotic scaling laws. Under infinite data ($N \to \infty$), the network error asymptotically approaches a positive non-zero floor determined by irreducible measurement noise and spatial ill-posedness ($\text{RMSE}_\infty > 0$).
+> **Scientific Interpretation:** These power laws are empirical characterizations describing the rate of error reduction under the current synthetic generator and U-Net model capacity over the range $N \in [2400, 19200]$. They should not be conflated with universal asymptotic scaling laws. Under infinite data ($N \to \infty$), the network error asymptotically approaches a positive non-zero floor determined by irreducible measurement noise and spatial ill-posedness ($\text{RMSE}_\infty > 0$). Furthermore, paired statistical tests reflect $n=3$ matched initialization seeds ($df=2$); while consistent across replicates, their generalizability is constrained by the small number of training seeds.
 
-### 4.2 Marginal Diminishing Returns
+### 4.2 Marginal Diminishing Returns vs. Plateau
 The marginal error reductions across successive cohort doublings demonstrate sharp diminishing returns:
 
 | Interval | CBF Absolute $\Delta$ | CBF % Reduction | ATT Absolute $\Delta$ | ATT % Reduction | Mean GPU Training Time per Model |
@@ -97,7 +99,7 @@ The marginal error reductions across successive cohort doublings demonstrate sha
 | **$4800 \to 9600$** | $0.0483$ mL/100g/min | $4.89\%$ | $0.0021$ s | $3.67\%$ | $\approx 21.7$ min |
 | **$9600 \to 19200$** | $0.0757$ mL/100g/min | $8.06\%$ | $0.0023$ s | $4.28\%$ | $\approx 37.6$ min |
 
-While CBF error shows a secondary drop at $N=19,200$ due to feature filter refinement in deep encoder layers, ATT exhibits early plateau behavior: the marginal reduction between 4,800 and 19,200 phantoms is only $\approx 0.004$ seconds ($4$ milliseconds), which approaches the physiological noise floor.
+Importantly, because test error decreases monotonically through $N=19,200$, a true mathematical plateau ($\Delta = 0$) has **not** been established within the tested range. However, because $\alpha < 0.10$, an 8-fold increase in training data ($2,400 \to 19,200$) yields only $\approx 18\%$ CBF and $\approx 14\%$ ATT improvement, establishing clear diminishing marginal returns relative to compute investment.
 
 ---
 
@@ -130,6 +132,7 @@ All artifacts generated by this experiment have been cryptographically audited a
 | **Results CSV (All 12 Runs)** | `D:\ASL_WORKSPACE\experiments\training_size_scaling_v1\training_scaling_results.csv` | 14 rows \| 12 completed runs |
 | **Summary Table** | `D:\ASL_WORKSPACE\experiments\training_size_scaling_v1\results\scaling_summary_table.csv` | Grouped means & std |
 | **Statistical Test JSON** | `D:\ASL_WORKSPACE\experiments\training_size_scaling_v1\results\statistical_scaling_tests.json` | Power laws & paired $t$-tests |
+| **Forensic Audit Report** | `D:\ASL_WORKSPACE\experiments\scaling_forensic_audit_v1\FORENSIC_AUDIT_REPORT.md` | Full forensic audit & reconciliation |
 | **Scaling Curves Figure** | `D:\ASL_WORKSPACE\experiments\training_size_scaling_v1\learning_curves\training_size_scaling_curves.png` | DPI: 300 |
 | **Multi-SNR Curves Figure** | `D:\ASL_WORKSPACE\experiments\training_size_scaling_v1\learning_curves\snr_wise_scaling_performance.png` | DPI: 300 |
 | **Full Curve Figure (100-19200)**| `D:\ASL_WORKSPACE\experiments\training_size_scaling_v1\learning_curves\full_learning_curve_100_to_19200.png` | DPI: 300 |
@@ -138,7 +141,7 @@ All artifacts generated by this experiment have been cryptographically audited a
 
 ## 7. Conclusions & Next Steps
 
-1. **Conclusion on Sample Count:** Increasing the synthetic training size from 2,400 to 19,200 phantoms provides genuine, statistically robust generalization improvements ($p < 0.01$). Overfitting is completely avoided.
-2. **Empirical Plateau:** With scaling exponents $\alpha \approx 0.07\text{--}0.09$, further doubling from 19,200 to 38,400 phantoms would yield only $\approx 4\text{--}6\%$ error reduction while requiring substantial extra GPU compute time.
+1. **Conclusion on Sample Count:** Increasing the synthetic training size from 2,400 to 19,200 phantoms provides monotonic, consistent test performance improvements across all three training seeds, with validation and test losses declining together and no observed performance degradation at larger cohort sizes.
+2. **Diminishing Returns vs. Plateau:** A mathematical plateau has not been reached within the tested range, as error continues to decrease at $N=19,200$. However, with sub-linear scaling exponents ($\alpha_{\text{CBF}} \approx 0.093, \alpha_{\text{ATT}} \approx 0.069$), returns per sample diminish rapidly. Extrapolating the empirical power law to a hypothetical $N=38,400$ phantoms projects a modest $\approx 4.7\%$ reduction in ATT RMSE (to $\approx 0.049$ s) and $\approx 6.2\%$ in CBF RMSE (to $\approx 0.817$ mL/100g/min) at double the compute budget; note that this is an unverified mathematical extrapolation rather than an experimental finding.
 3. **Primary Recommendation:** Rather than scaling sample count $N$ further within the current synthetic generator, future research should focus on **expanding synthetic simulator physiological diversity** (e.g. non-instantaneous water exchange, vascular dispersion, transit delay heterogeneity, macrovascular contamination), as detailed in `simulator_diversity_proposal.md`.
 
