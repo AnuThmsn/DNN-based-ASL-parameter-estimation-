@@ -1,0 +1,108 @@
+{
+  "experiment_id": "training_size_scaling_v1_snr_verification",
+  "source_experiment": "training_size_scaling_v1",
+  "description": "Experiment discovery and audit manifest for 19,200-sample 4-PLD ASL U-Net across discrete SNR regimes",
+  "audit_timestamp": "2026-10-13T15:05:00+05:30",
+  "model_architecture": {
+    "model_class": "ASLUNet",
+    "in_channels": 4,
+    "out_channels": 2,
+    "features": [32, 64, 128, 256],
+    "bottleneck_channels": 512,
+    "bilinear": false,
+    "trainable_parameters": 7763362,
+    "parameter_count_verified": true
+  },
+  "acquisition_protocol": {
+    "plds_seconds": [1.525, 2.025, 2.525, 3.025],
+    "labeling_duration_tau_seconds": 1.80,
+    "scale_factor": 1000.0,
+    "signal_reference": 0.0076722
+  },
+  "training_setup": {
+    "training_samples": 19200,
+    "training_dataset_file": "train_nested_N19200_s42.npz",
+    "training_dataset_sha256": "af09dd8f8b9787bc96e745aeedcc98093a90047ed0d0946c1183cdb3f423330d",
+    "generation_seed": 42,
+    "optimizer": "AdamW",
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "loss_function": "MaskedLoss (L1 on brain voxels)",
+    "lr_scheduler": "ReduceLROnPlateau(factor=0.5, patience=4)",
+    "seeds": [42, 123, 2024]
+  },
+  "validation_cohort": {
+    "file": "val_N100_s99.npz",
+    "n_phantoms": 100,
+    "generation_seed": 99,
+    "cohort_leakage": 0
+  },
+  "checkpoints": {
+    "seed_42": {
+      "path": "D:/ASL_WORKSPACE/experiments/training_size_scaling_v1/checkpoints/unet_N19200_seed_42.pth",
+      "sha256": "2077ab6edb6b76da5c6e4145a98763524017c6327d44d2adc9f48358af3b276d",
+      "best_epoch": 37,
+      "best_val_loss": 0.06009574793279171
+    },
+    "seed_123": {
+      "path": "D:/ASL_WORKSPACE/experiments/training_size_scaling_v1/checkpoints/unet_N19200_seed_123.pth",
+      "sha256": "2a34b8184a4efd0d14b250237a95e7b936c356e223f6af1b13f258ec7e2c8f4c",
+      "best_epoch": 35,
+      "best_val_loss": 0.06085623987019062
+    },
+    "seed_2024": {
+      "path": "D:/ASL_WORKSPACE/experiments/training_size_scaling_v1/checkpoints/unet_N19200_seed_2024.pth",
+      "sha256": "efde05dd2aa9603dcc62d472c1a2615ac6f0bba7d85d83ee4d9b371ce4a36f49",
+      "best_epoch": 31,
+      "best_val_loss": 0.062241511419415474
+    }
+  },
+  "snr_evaluation_protocol": {
+    "test_cohort": "Locked Multi-SNR Cohort (N=100 phantoms, seed 777)",
+    "base_file": "D:/ASL_WORKSPACE/data/test_locked_N100_s777.npz",
+    "base_sha256": "90ad6d29c4bafe5c63fc7d4f910ea05c0c9cbcf7a18bb708fceb4081b37320fc",
+    "valid_brain_voxels_per_cohort": 171728,
+    "ground_truth_and_mask_identical_across_snr": true,
+    "snr_levels": [5, 10, 15, 20, 50, "inf"],
+    "noiseless_reference_condition": "inf",
+    "noise_simulation_model": "Two-coil Rician noise with standard deviation sigma = SIG_REF_SC / SNR on synthetic Buxton Buxton model signal",
+    "snr_snapshot_files": {
+      "5": {
+        "path": "D:/ASL_WORKSPACE/data/test_locked_N100_s777_snr_5.npz",
+        "sha256": "88cea96f5776e3431e39a904f5e00934a803ac85882b7f106d01cdbf55f75a03"
+      },
+      "10": {
+        "path": "D:/ASL_WORKSPACE/data/test_locked_N100_s777_snr_10.npz",
+        "sha256": "44cd021fed3a0f62ea6c01e75d1a6bcd310613f346aefc1a61a6bacf61184a4b"
+      },
+      "15": {
+        "path": "D:/ASL_WORKSPACE/data/test_locked_N100_s777_snr_15.npz",
+        "sha256": "b880fa2ce8386c4de8f81a24dd18c2a2d3b9c8e9c47d3df38e7b05f456c503ba"
+      },
+      "20": {
+        "path": "D:/ASL_WORKSPACE/data/test_locked_N100_s777_snr_20.npz",
+        "sha256": "765fb41b6b36f4b52863623ec1201d6f39e087689949063c3396b634753b7ef8"
+      },
+      "50": {
+        "path": "D:/ASL_WORKSPACE/data/test_locked_N100_s777_snr_50.npz",
+        "sha256": "61c722a8f58b343a22603e0a62df18776de3d17fcf4b3984699767eae0fa7252"
+      },
+      "inf": {
+        "path": "D:/ASL_WORKSPACE/data/test_locked_N100_s777_snr_inf.npz",
+        "sha256": "40d15a6d12c45545c1e54fee3757c2302ab86bfd5142d33c4ed3930f398d202d"
+      }
+    }
+  },
+  "original_experiment_files": {
+    "scaling_runner": "experiments_unet_4pld/run_training_size_scaling.py",
+    "training_scaling_results_csv": "D:/ASL_WORKSPACE/experiments/training_size_scaling_v1/training_scaling_results.csv",
+    "scaling_summary_table_csv": "D:/ASL_WORKSPACE/experiments/training_size_scaling_v1/results/scaling_summary_table.csv",
+    "scaling_report": "experiments_unet_4pld/audit/scaling_study_report.md"
+  },
+  "status_assessment": {
+    "snr_rmse_in_original_results": "CONFIRMED_PRESENT",
+    "snr_mae_bias_r2_in_original_results": "MISSING_FROM_ORIGINAL_CSV",
+    "re_evaluation_required": true,
+    "re_evaluation_rationale": "The original training scaling script only saved CBF and ATT RMSE across SNR levels into training_scaling_results.csv. Full per-SNR metrics (MAE, Bias, R2) require fresh inference using the three saved 19,200 checkpoints and identical test cohort snapshots."
+  }
+}
