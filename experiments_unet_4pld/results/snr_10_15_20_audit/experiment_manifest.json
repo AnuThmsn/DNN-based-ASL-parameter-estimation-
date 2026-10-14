@@ -1,0 +1,111 @@
+{
+  "experiment_id": "unet_snr_10_15_20_audit",
+  "description": "SNR evaluation audit and completion for 4-PLD Spatial ASL U-Net across SNR 10, 15, and 20 dB",
+  "audit_timestamp": "2026-10-14T16:32:00+05:30",
+  "model_architecture": {
+    "model_class": "ASLUNet",
+    "in_channels": 4,
+    "out_channels": 2,
+    "features": [32, 64, 128, 256],
+    "bottleneck_channels": 512,
+    "bilinear": false,
+    "trainable_parameters": 7763362,
+    "architecture_verified": true
+  },
+  "acquisition_protocol": {
+    "plds_seconds": [1.525, 2.025, 2.525, 3.025],
+    "labeling_duration_tau_seconds": 1.80,
+    "signal_scale_factor": 100000.0,
+    "sig_ref_sc": 334.2039,
+    "sd_max": 66.84078,
+    "cbf_bounds_ml_100g_min": [0.0, 100.0],
+    "att_bounds_seconds": [0.5, 3.0]
+  },
+  "cohort_specifications": {
+    "training": {
+      "n_phantoms": 600,
+      "seed": 42,
+      "file": "D:/ASL_WORKSPACE/data/train_N600_s42.npz",
+      "sha256": "07ecdc8284e92bba8fb88136e0ecd139345805d54e80f40485bf638f80d4c6e9",
+      "size_bytes": 43117924
+    },
+    "validation": {
+      "n_phantoms": 100,
+      "seed": 99,
+      "file": "D:/ASL_WORKSPACE/data/val_N100_s99.npz",
+      "sha256": "f9fca0308c6b216cd0ff1bcb1da91b917a1fb2020bc40e27496a33cef3111301",
+      "size_bytes": 7188679
+    },
+    "original_historical_test": {
+      "n_phantoms": 100,
+      "seed": 7,
+      "file": "D:/ASL_WORKSPACE/data/test_N100_s7.npz",
+      "sha256": "c853337a83a7a289790a5e1ae826c4990037bfae44ececa1b181f3192ad6893f",
+      "size_bytes": 7169272,
+      "note": "Original generator alternated SNR targets [10, 15] across phantom instances (50 even at SNR 10, 50 odd at SNR 15). Underlying maps differed between SNR 10 and 15, and SNR 20 was completely absent."
+    }
+  },
+  "training_seeds": [42, 123, 2024],
+  "checkpoints": {
+    "seed_42": {
+      "path": "D:/ASL_WORKSPACE/checkpoints/unet_best_seed_42.pth",
+      "sha256": "9115cde90f0306a02b1fb531006062fa3feaa5be6c048194e16d69d0ed151b49",
+      "best_epoch": 60,
+      "best_val_loss": 0.08238165453076363,
+      "val_cbf_rmse": 1.111,
+      "val_att_rmse": 0.0623
+    },
+    "seed_123": {
+      "path": "D:/ASL_WORKSPACE/checkpoints/unet_best_seed_123.pth",
+      "sha256": "e5cd5265390982fdac2f2a0d305e982b8e29ae1c045697edb3931383bc738485",
+      "best_epoch": 66,
+      "best_val_loss": 0.08365418948233128,
+      "val_cbf_rmse": 1.160,
+      "val_att_rmse": 0.0642
+    },
+    "seed_2024": {
+      "path": "D:/ASL_WORKSPACE/checkpoints/unet_best_seed_2024.pth",
+      "sha256": "e77f701ed2ce769150b17285d3513b249c8d8a437944132acff78756ba4018c4",
+      "best_epoch": 31,
+      "best_val_loss": 0.08356439135968685,
+      "val_cbf_rmse": 1.157,
+      "val_att_rmse": 0.0624
+    }
+  },
+  "locked_snr_evaluation_cohort": {
+    "description": "Locked 100-phantom evaluation cohort based on seed 7, where all 100 phantoms share identical ground-truth parameter maps and brain masks across SNR 10, 15, and 20, differing strictly in additive two-coil Rician noise.",
+    "n_phantoms": 100,
+    "valid_brain_voxels_total": 171356,
+    "identical_gt_and_masks_across_snr": true,
+    "cohort_leakage_vs_train": 0,
+    "cohort_leakage_vs_val": 0,
+    "snr_snapshots": {
+      "10": {
+        "file": "D:/ASL_WORKSPACE/experiments/snr_benchmark_4pld/data/test_N100_snr_10.npz",
+        "sha256": "0276354d2353675572fbf42a31f533f32cb5802f0b22262fe98a00f30cb339ce",
+        "size_bytes": 3813813,
+        "snr_target": 10.0,
+        "noise_sd": 33.42039
+      },
+      "15": {
+        "file": "D:/ASL_WORKSPACE/experiments/snr_benchmark_4pld/data/test_N100_snr_15.npz",
+        "sha256": "01f3b8d96f1295c25f2987326b0da63d2c1b754ed93833995f4876c4362ddee0",
+        "size_bytes": 3811724,
+        "snr_target": 15.0,
+        "noise_sd": 22.28026
+      },
+      "20": {
+        "file": "D:/ASL_WORKSPACE/experiments/snr_benchmark_4pld/data/test_N100_snr_20.npz",
+        "sha256": "91a6be3352074b88667a6e6698e88a41da2de2af9c77b14d0ed50f5eb2e70e88",
+        "size_bytes": 3810073,
+        "snr_target": 20.0,
+        "noise_sd": 16.710195
+      }
+    }
+  },
+  "audit_findings": {
+    "snr_fairness_issue": "Original generator cycled SNR across instances (fixed_snrs=[10, 15]), so SNR 10 and 15 evaluated disjoint phantom subsets (50 each) with different anatomy. SNR 20 was omitted.",
+    "resolution": "Recovered locked SNR snapshots for test_N100_s7 where all 100 phantoms are evaluated at SNR 10, 15, and 20 with identical reference phantoms and masks, isolating the effect of SNR.",
+    "checkpoint_reuse": "Reused exact existing 600-sample trained checkpoints (seeds 42, 123, 2024). No retraining required."
+  }
+}
